@@ -7,7 +7,10 @@
 *.log
 *.toc
 *.xls
+*.xlsx
 *.txt
+*.png
+*.pickle
 /.ipynb_checkpoints
 /__pycache__
 /adult_pickles
