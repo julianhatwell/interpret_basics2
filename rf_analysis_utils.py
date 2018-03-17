@@ -259,6 +259,8 @@ def enc_features(instances, feature_encoding):
         addendum = "\n"
     else:
         instances = feature_encoding.transform(instances)
+        if 'todense' in dir(instances): # it's a sparse matrix
+            instances = instances.todense()
         n_features = instances.shape[1]
         addendum = "(after encoding)\n"
     return(instances, n_features, addendum)
@@ -665,7 +667,7 @@ def tree_path(tree, instances, labels = None, feature_encoding = None, feature_n
         p = path_deque.popleft()
         if feature[p] < 0: # leaf node
             continue
-        feature_value = instances.todense()[ic, [feature[p]]].item(0)
+        feature_value = instances[ic, [feature[p]]].item(0)
         leq_threshold = feature_value <= threshold[p]
         if feature_names is None:
             feature_name = None
@@ -1103,6 +1105,7 @@ def apply_rule(rule, data, features):
     idx = np.full(data.shape[0], 1, dtype='bool')
     for r in rule:
         idx = np.logical_and(idx, lt_gt(data.getcol(features.index(r[0])).toarray().flatten(), r[2], r[1]))
+        # idx = np.logical_and(idx, lt_gt(data[:, features.index(r[0])], r[2], r[1]))
     return(idx)
 
 def pretty_print(rule_list, onehot_dict):

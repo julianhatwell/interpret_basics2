@@ -104,7 +104,7 @@ vars_types = ['continuous'
 class_col = 'NSP'
 features = [vn for vn in var_names if vn != class_col]
 
-cardiotography = pd.read_excel('CTG.xlsx'
+cardiotography = pd.read_excel(pickle_path('CTG.xlsx')
                                 , header=None
                                 , names=var_names)
 

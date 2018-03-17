@@ -7,6 +7,10 @@ from sklearn.model_selection import train_test_split, GridSearchCV, ParameterGri
 import pickle
 from itertools import chain
 
+from datetime import datetime
+import julian
+jul_conv = lambda x : 0 if str(x) == 'nan' else julian.to_jd(datetime.strptime(x, '%b-%Y'))
+
 pickle_dir = 'lending_pickles'
 
 print(
@@ -29,18 +33,20 @@ def rstr(lending):
 def pickle_path(filename):
     return(pickle_dir + '\\' + filename)
 
-# random seed for test_train_split
-seed=123
+# random seed for train test split and sampling
+seed = 123
+class_col = 'loan_status'
 
 if True:
-    '''
-    lending = pd.read_csv('accepted_2007_to_2017Q3.csv.gz', compression='gzip', low_memory=True)
+    
+    lending = pd.read_csv(pickle_path('accepted_2007_to_2017Q3.csv.gz'), compression='gzip', low_memory=True)
     # low_memory=False prevents mixed data types in the DataFrame
 
     # Just looking at loans that met the policy and were either fully paid or charged off (finally defaulted)
     lending = lending.loc[lending['loan_status'].isin(['Fully Paid', 'Charged Off'])]
 
     # data set is wide. What can be done to reduce it?
+
     # drop cols with only one distinct value
     drop_list = []
     for col in lending.columns:
@@ -49,19 +55,19 @@ if True:
 
     lending.drop(labels=drop_list, axis=1, inplace=True)
 
-    # drop super sparse columns (not sure if this is a good idea)
+    # drop cols with excessively high missing amounts
     drop_list = []
     for col in lending.columns:
-        if lending[col].notnull().sum() / lending.shape[0] < 0.02:
+        if lending[col].notnull().sum() / lending.shape[0] < 0.5:
             drop_list.append(col)
 
     lending.drop(labels=drop_list, axis=1, inplace=True)
 
     # more noisy columns
-    lending.drop(labels=['id', 'desc', 'title', 'emp_title'], axis=1, inplace=True) # title is duplicated in purpose
+    lending.drop(labels=['id', 'title', 'emp_title', 'application_type', 'acc_now_delinq', 'num_tl_120dpd_2m', 'num_tl_30dpd'], axis=1, inplace=True) # title is duplicated in purpose
 
     # convert dates to integers
-    for date_col in ['issue_d', 'last_credit_pull_d', 'earliest_cr_line', 'last_payment_d']:
+    for date_col in ['issue_d', 'last_credit_pull_d', 'earliest_cr_line', 'last_pymnt_d']:
         lending[date_col] = lending[date_col].map(jul_conv)
 
     # highly correlated with default
@@ -77,11 +83,11 @@ if True:
     lending['sub_grade'] = lending['sub_grade'].apply(lambda s: grade_to_float(s))
     lending.drop(labels=['grade'], axis=1, inplace=True)
 
-    # convert emp_length to floats
+    # convert emp_length to floats - assume missing is no job
     def emp_conv(s):
         try:
             if pd.isnull(s):
-                return s
+                return 0.0
             elif s[0] == '<':
                 return 0.0
             elif s[:2] == '10':
@@ -92,19 +98,56 @@ if True:
             return np.float64(s)
 
     lending['emp_length'] = lending['emp_length'].apply(lambda s: emp_conv(s))
-    lending['emp_length'].value_counts()
 
-    lending.to_csv(pickle_path('lending.csv'), index=False)
-    '''
+    # 'avg_cur_bal is a template for block missingness
+    # will introduce a missing indicator column based on this
+    # then fillna with zeros and filter out some unsalvageable rows
+    lending['block_missingness'] = lending['avg_cur_bal'].isnull() * 1.0
 
-lending = pd.read_csv(pickle_path('lending.csv'))
+    lending['last_credit_pull_d'] = lending['last_credit_pull_d'].apply(lambda x: np.nan if x == 0 else x)
+    lending['last_credit_pull_d'] = lending.last_credit_pull_d.fillna(lending.last_credit_pull_d.mean())
 
-var_names = var_names = list(lending)[0:11] + list(lending)[13:] + list(lending)[12:13]
-lending = lending[var_names]
+    lending = lending.fillna(0)
+    lending = lending[lending.last_pymnt_d != 0]
 
+    # no need for an upper and lower fico, they are perfectly correlated
+    fic = ['fico_range_low', 'fico_range_high']
+    lastfic = ['last_fico_range_low', 'last_fico_range_high']
+    lending['fico'] = lending[fic].mean(axis=1)
+    lending['last_fico'] = lending[lastfic].mean(axis=1)
+    lending.drop(labels=fic + lastfic, axis=1, inplace=True)
+
+    # slightly more informative coding of these vars that are mostly correlated with loan amnt and/or high skew
+    lending['non_funded_score'] = np.log(lending['loan_amnt'] + 1 - lending['funded_amnt'])
+    lending['non_funded_inv_score'] = np.log(lending['loan_amnt'] + 1 - lending['funded_amnt_inv'])
+    lending['adj_log_dti'] = np.log(lending['dti'] + abs(lending['dti'].min()) + 1)
+    lending['log_inc'] = np.log(lending['annual_inc'] + abs(lending['annual_inc'].min()) + 1)
+    lending.drop(['funded_amnt', 'funded_amnt_inv', 'dti', 'annual_inc'], axis=1, inplace=True)
+
+    # and rearrange so class_col is at the end
+    class_col = 'loan_status'
+    pos = np.where(lending.columns == class_col)[0][0]
+    var_names = list(lending.columns[:pos]) + list(lending.columns[pos + 1:]) + list(lending.columns[pos:pos + 1])
+    lending = lending[var_names]
+
+    lend_samp = lending.sample(frac=0.1, random_state=seed).reset_index()
+    lend_samp.drop(labels='index', axis=1, inplace=True)
+
+    lending.to_csv(pickle_path('lending.csv.gz'), index=False, compression='gzip')
+    lend_samp.to_csv(pickle_path('lend_samp.csv.gz'), index=False, compression='gzip')
+
+
+### missing data analysis was done to get to the above strategy
+# import missingno as msno
+# missingdata_df = lending.columns[lending.isnull().any()].tolist()
+# msno.matrix(lending[missingdata_df])
+# msno.bar(lending[missingdata_df], color="blue", log=False, figsize=(30,18))
+# msno.heatmap(lending[missingdata_df], figsize=(20,20))
+# msno.dendrogram(lending[missingdata_df], figsize=(20,20))
+
+lending = pd.read_csv(pickle_path('lend_samp.csv.gz'), compression='gzip')
+var_names = lending.columns
 vars_types = ['nominal' if dt.name == 'object' else 'continuous' for dt in lending.dtypes.values]
-class_col = 'loan_status'
-
 features = [vn for vn in var_names if vn != class_col]
 
 # the following creates a copy of the data frame with int mappings of categorical variables for scikit-learn
