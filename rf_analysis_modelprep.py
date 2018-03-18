@@ -1,4 +1,5 @@
 import json
+import time
 import timeit
 import pickle
 import pandas as pd
@@ -42,13 +43,11 @@ if True:
     import json
     import timeit
     from sklearn.ensemble import RandomForestClassifier
-    msl = [(i + 1) * 25 for i in range(3)]
-    msl.insert(0, 1)
 
     grid = ParameterGrid({
-        'n_estimators': [(i + 1) * 200 for i in range(4, 9)]
-        , 'max_depth' : [i for i in [8, 16, 32]]
-        , 'min_samples_leaf' : msl
+        'n_estimators': [(i + 1) * 500 for i in range(3)]
+        , 'max_depth' : [i for i in [8, 16]]
+        , 'min_samples_leaf' : [1, 5]
         })
 
     start_time = timeit.default_timer()
@@ -57,13 +56,21 @@ if True:
     params = []
     best_score = 0
 
+    print(str(len(grid)) + ' runs to do')
+    print()
     for g in grid:
+        print('starting new run at: ' + time.asctime(time.gmtime()))
+        print(g)
         tree_start_time = timeit.default_timer()
         rf.set_params(oob_score = True, random_state=seed, **g)
         rf.fit(X_train_enc, y_train)
-        g['elapsed_time'] = timeit.default_timer() - tree_start_time
+        tree_end_time = timeit.default_timer()
+        g['elapsed_time'] = tree_end_time - tree_start_time
         g['score'] = rf.oob_score_
+        print('ending run at: ' + time.asctime(time.gmtime()))
         params.append(g)
+        print('completed ' + str(len(params)) + ' run(s)')
+        print()
         if rf.oob_score_ > best_score:
             best_score = rf.oob_score_
             best_grid = g

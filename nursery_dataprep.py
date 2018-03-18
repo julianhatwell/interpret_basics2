@@ -56,7 +56,7 @@ vars_types = ['nominal'
 class_col = 'decision'
 features = [vn for vn in var_names if vn != class_col]
 
-nursery = pd.read_csv('nursery.csv'
+nursery = pd.read_csv(pickle_path('nursery.csv')
                       , names=var_names)
 
 # filter one row where class == 2

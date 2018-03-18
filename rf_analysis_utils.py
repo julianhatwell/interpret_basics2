@@ -22,6 +22,8 @@ from scipy.stats import itemfreq, sem, entropy, rankdata
 from pandas.tools.plotting import parallel_coordinates
 from matplotlib.ticker import MaxNLocator
 
+import pyfpgrowth as fpg
+
 # helper function for returning counts and proportions of unique values in an array
 def p_count(arr):
     labels, counts = np.unique(arr, return_counts = True)
@@ -817,7 +819,7 @@ def decode_onehot_paths(paths, labels, condense=True):
             paths[i] = list(set(paths[i]))
     return(paths)
 
-def apriori(transactions, support, max_itemset_size):
+def apriori(transactions, support, min_itemset_size = 2, max_itemset_size = 5):
 
     def clear_items(candidate_dct, support, pass_nbr):
 
@@ -904,7 +906,17 @@ def apriori(transactions, support, max_itemset_size):
     return dict(candidate_dct)
 
 
-def discretize_paths(paths, vars_dict, bins):
+def discretize_paths(paths, vars_dict, bins, equal_counts=False):
+
+    if equal_counts:
+        def hist_func(x, bins):
+            npt = len(x)
+            return np.interp(np.linspace(0, npt, bins + 1),
+                             np.arange(npt),
+                             np.sort(x))
+    else:
+        def hist_func(x, bins):
+            return(np.histogram(x, bins))
 
     cont_vars = [vn for vn in vars_dict if vars_dict[vn]['data_type'] == 'continuous' and vars_dict[vn]['class_col'] == False]
     for feature in cont_vars:
@@ -960,8 +972,13 @@ def sort_fp(freq_patts, alpha=0.0):
     # score is now at position 2 of tuple
     return(sorted(fp_scope, key=itemgetter(2), reverse = True))
 
-def get_sorted_fp(paths, support = 0.1, max_itemset_size = 5, alpha = 0.0):
-    freq_patt = apriori(transactions = paths, support = support, max_itemset_size = max_itemset_size)
+def get_sorted_fp(paths, support = 0.1, alpha = 0.0):
+    # freq_patt = apriori(transactions = paths, support = support, max_itemset_size = max_itemset_size)
+
+    # convert to an absolute number of instances rather than a fraction
+    if support < 1:
+        support = round(support * len(paths))
+    freq_patt = fpg.find_frequent_patterns(paths, support)
     sorted_patt = sort_fp(freq_patt, alpha=alpha)
     return(sorted_patt)
 

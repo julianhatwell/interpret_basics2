@@ -38,7 +38,7 @@ seed = 123
 class_col = 'loan_status'
 
 if True:
-    
+
     lending = pd.read_csv(pickle_path('accepted_2007_to_2017Q3.csv.gz'), compression='gzip', low_memory=True)
     # low_memory=False prevents mixed data types in the DataFrame
 
@@ -81,33 +81,43 @@ if True:
     def grade_to_float(s):
         return 5 * grade_dict[s[0]] + np.float(s[1]) - 1
     lending['sub_grade'] = lending['sub_grade'].apply(lambda s: grade_to_float(s))
-    lending.drop(labels=['grade'], axis=1, inplace=True)
+    lending.drop(labels='grade', axis=1, inplace=True)
 
-    # convert emp_length to floats - assume missing is no job
-    def emp_conv(s):
-        try:
-            if pd.isnull(s):
-                return 0.0
-            elif s[0] == '<':
-                return 0.0
-            elif s[:2] == '10':
-                return 10.0
-            else:
-                return np.float(s[0])
-        except TypeError:
-            return np.float64(s)
+    # convert emp_length - assume missing and < 0 is no job or only very recent started job
+    # emp length is only significant for values of 0 or not 0
+    def emp_conv(e):
+        if pd.isnull(e):
+            return 'U'
+        elif e[0] == '<':
+            return 'U'
+        else:
+            return 'E'
+    lending['emp'] = lending['emp_length'].apply(lambda e: emp_conv(e))
+    lending.drop(labels='emp_length', axis=1, inplace=True)
 
-    lending['emp_length'] = lending['emp_length'].apply(lambda s: emp_conv(s))
+    # tidy up some very minor class codes in home ownership
+    lending['home_ownership'] = lending['home_ownership'].apply(lambda h: 'OTHER' if h in ['ANY', 'NONE'] else h)
+
+    # there is a number of rows that have missing data for many variables in a block pattern -
+    # these are probably useless because missingness goes across so many variables
+    # it might be possible to save them to a different set and create a separate model on them
+
+    # another approach is to fill them with an arbitrary data point (means, zeros, whatever)
+    # and add a new feature that is binary for whether this row had missing data
+    # this will give the model something to adjust/correlate/associate with if these rows turn out to add noise
 
     # 'avg_cur_bal is a template for block missingness
     # will introduce a missing indicator column based on this
-    # then fillna with zeros and filter out some unsalvageable rows
+    # then fillna with zeros and finally filter out some unsalvageable really rows
     lending['block_missingness'] = lending['avg_cur_bal'].isnull() * 1.0
 
+    # this one feature has just a tiny number of zero (invalid date) and NaNs.
+    # will put these in into the same state and deal with them together
     lending['last_credit_pull_d'] = lending['last_credit_pull_d'].apply(lambda x: np.nan if x == 0 else x)
     lending['last_credit_pull_d'] = lending.last_credit_pull_d.fillna(lending.last_credit_pull_d.mean())
 
     lending = lending.fillna(0)
+    # rows where last_pymnt_d is zero are just a mess, get them outa here
     lending = lending[lending.last_pymnt_d != 0]
 
     # no need for an upper and lower fico, they are perfectly correlated
@@ -130,9 +140,11 @@ if True:
     var_names = list(lending.columns[:pos]) + list(lending.columns[pos + 1:]) + list(lending.columns[pos:pos + 1])
     lending = lending[var_names]
 
+    # create a small set that is easier to play with on a laptop
     lend_samp = lending.sample(frac=0.1, random_state=seed).reset_index()
     lend_samp.drop(labels='index', axis=1, inplace=True)
 
+    # full set
     lending.to_csv(pickle_path('lending.csv.gz'), index=False, compression='gzip')
     lend_samp.to_csv(pickle_path('lend_samp.csv.gz'), index=False, compression='gzip')
 
