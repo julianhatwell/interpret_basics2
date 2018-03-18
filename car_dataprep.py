@@ -33,8 +33,6 @@ def pickle_path(filename):
 # random seed for test_train_split
 seed=123
 
-target_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/car/car.data'
-
 var_names = ['buying'
             , 'maint'
             , 'doors'
@@ -54,10 +52,19 @@ vars_types = ['nominal'
 class_col = 'acceptability'
 features = [vn for vn in var_names if vn != class_col]
 
-car_bytes = urllib.request.urlopen(target_url)
-car = pd.read_csv(car_bytes, header=None, names=var_names)
-# recode to a 2 class subproblems
-car.acceptability.loc[car.acceptability != 'unacc'] = 'acc'
+if True:
+    '''
+    target_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/car/car.data'
+
+    car_bytes = urllib.request.urlopen(target_url)
+    car = pd.read_csv(car_bytes, header=None, names=var_names)
+    # recode to a 2 class subproblems
+    car.acceptability.loc[car.acceptability != 'unacc'] = 'acc'
+
+    car.to_csv(pickle_path('car.csv.gz'), index=False, compression='gzip')
+    '''
+    
+car = pd.read_csv(pickle_path('car.csv.gz'), compression='gzip')
 
 # the following creates a copy of the data frame with int mappings of categorical variables for scikit-learn
 # and also a dictionary containing the label encoders/decoders for each column

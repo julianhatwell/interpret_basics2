@@ -47,8 +47,6 @@ def pickle_path(filename):
 # random seed for test_train_split
 seed=123
 
-target_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/statlog/german/german.data'
-
 var_names = ['chk'
             , 'dur'
             , 'crhis'
@@ -96,25 +94,34 @@ vars_types = ['nominal'
 class_col = 'rating'
 features = [vn for vn in var_names if vn != class_col]
 
-german_bytes = urllib.request.urlopen(target_url)
-german = pd.read_csv(german_bytes,
-                     header=None,
-                     delimiter=' ',
-                     index_col=False,
-                     names=var_names)
+if True:
+    '''
+    target_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/statlog/german/german.data'
 
-# re-code rating class variable
-rating = pd.Series(['good'] * german.count()[0])
-rating.loc[german.rating == 2] = 'bad'
-german.rating = rating
+    german_bytes = urllib.request.urlopen(target_url)
+    german = pd.read_csv(german_bytes,
+                         header=None,
+                         delimiter=' ',
+                         index_col=False,
+                         names=var_names)
 
-# kill continuous vars for now
-# to_be_del = ['dur', 'amt', 'rate', 'res', 'age', 'creds', 'deps']
-#for tbd in to_be_del:
-#    del german[tbd]
-#    del vars_types[np.where(np.array(var_names) == tbd)[0][0]]
-#    del var_names[np.where(np.array(var_names) == tbd)[0][0]]
-#    del features[np.where(np.array(features) == tbd)[0][0]]
+    # re-code rating class variable
+    rating = pd.Series(['good'] * german.count()[0])
+    rating.loc[german.rating == 2] = 'bad'
+    german.rating = rating
+
+    # kill continuous vars for now
+    # to_be_del = ['dur', 'amt', 'rate', 'res', 'age', 'creds', 'deps']
+    #for tbd in to_be_del:
+    #    del german[tbd]
+    #    del vars_types[np.where(np.array(var_names) == tbd)[0][0]]
+    #    del var_names[np.where(np.array(var_names) == tbd)[0][0]]
+    #    del features[np.where(np.array(features) == tbd)[0][0]]
+
+    german.to_csv(pickle_path('german.csv.gz'), index=False, compression='gzip')
+    '''
+    
+german = pd.read_csv(pickle_path('german.csv.gz'), compression='gzip')
 
 # the following creates a copy of the data frame with int mappings of categorical variables for scikit-learn
 # and also a dictionary containing the label encoders/decoders for each column

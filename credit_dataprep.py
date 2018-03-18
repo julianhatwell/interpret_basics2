@@ -49,8 +49,6 @@ def pickle_path(filename):
 # random seed for test_train_split
 seed=123
 
-target_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/credit-screening/crx.data'
-
 var_names = ['A1'
             , 'A2'
             , 'A3'
@@ -88,26 +86,34 @@ vars_types = ['nominal'
 class_col = 'A16'
 features = [vn for vn in var_names if vn != class_col]
 
-credit_bytes = urllib.request.urlopen(target_url)
-credit = pd.read_csv(credit_bytes,
-                     header=None,
-                     delimiter=',',
-                     index_col=False,
-                     names=var_names,
-                     na_values = '?')
+if True:
+    '''
+    target_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/credit-screening/crx.data'
 
-# re-code rating class variable
-A16 = pd.Series(['plus'] * credit.shape[0])
-A16.loc[credit.A16.values == '-'] = 'minus'
-credit.A16 = A16
+    credit_bytes = urllib.request.urlopen(target_url)
+    credit = pd.read_csv(credit_bytes,
+                         header=None,
+                         delimiter=',',
+                         index_col=False,
+                         names=var_names,
+                         na_values = '?')
 
-# deal with some missing data
-for v, t in zip(var_names, vars_types):
-    if t == 'nominal':
-        credit[v] = credit[v].fillna('u')
-    else:
-        credit[v] = credit[v].fillna(credit[v].mean())
+    # re-code rating class variable
+    A16 = pd.Series(['plus'] * credit.shape[0])
+    A16.loc[credit.A16.values == '-'] = 'minus'
+    credit.A16 = A16
 
+    # deal with some missing data
+    for v, t in zip(var_names, vars_types):
+        if t == 'nominal':
+            credit[v] = credit[v].fillna('u')
+        else:
+            credit[v] = credit[v].fillna(credit[v].mean())
+
+    credit.to_csv(pickle_path('credit.csv.gz'), index=False, compression='gzip')
+    '''
+
+credit = pd.read_csv(pickle_path('credit.csv.gz'), compression='gzip')
 # the following creates a copy of the data frame with int mappings of categorical variables for scikit-learn
 # and also a dictionary containing the label encoders/decoders for each column
 credit_pre = pd.DataFrame.copy(credit)

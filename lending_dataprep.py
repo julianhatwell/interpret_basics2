@@ -38,7 +38,7 @@ seed = 123
 class_col = 'loan_status'
 
 if True:
-
+    '''
     lending = pd.read_csv(pickle_path('accepted_2007_to_2017Q3.csv.gz'), compression='gzip', low_memory=True)
     # low_memory=False prevents mixed data types in the DataFrame
 
@@ -92,7 +92,7 @@ if True:
             return 'U'
         else:
             return 'E'
-    lending['emp'] = lending['emp_length'].apply(lambda e: emp_conv(e))
+    lending['emp'] = lending['emp_length'].apply(emp_conv)
     lending.drop(labels='emp_length', axis=1, inplace=True)
 
     # tidy up some very minor class codes in home ownership
@@ -147,7 +147,7 @@ if True:
     # full set
     lending.to_csv(pickle_path('lending.csv.gz'), index=False, compression='gzip')
     lend_samp.to_csv(pickle_path('lend_samp.csv.gz'), index=False, compression='gzip')
-
+    '''
 
 ### missing data analysis was done to get to the above strategy
 # import missingno as msno

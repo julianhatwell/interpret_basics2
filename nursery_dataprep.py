@@ -55,14 +55,20 @@ vars_types = ['nominal'
 
 class_col = 'decision'
 features = [vn for vn in var_names if vn != class_col]
+if True:
+    '''
+    nursery = pd.read_csv(pickle_path('nursery.csv')
+                          , names=var_names)
 
-nursery = pd.read_csv(pickle_path('nursery.csv')
-                      , names=var_names)
+    # filter one row where class == 2
+    nursery = nursery[nursery.decision != 'recommend']
+    # reset the pandas index
+    nursery.index = range(len(nursery))
 
-# filter one row where class == 2
-nursery = nursery[nursery.decision != 'recommend']
-# reset the pandas index
-nursery.index = range(len(nursery))
+    nursery.to_csv(pickle_path('nursery.csv.gz'), index=False, compression='gzip')
+    '''
+
+nursery = pd.read_csv(pickle_path('nursery.csv.gz'), compression='gzip')
 
 # the following creates a copy of the data frame with int mappings of categorical variables for scikit-learn
 # and also a dictionary containing the label encoders/decoders for each column

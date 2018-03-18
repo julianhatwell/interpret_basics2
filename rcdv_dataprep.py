@@ -65,62 +65,66 @@ def pickle_path(filename):
 # random seed for test_train_split
 seed=123
 
-rcdv = pd.read_excel(pickle_path('rcdv.xlsx')
-                                , sheet_name='1978'
-                                , header=0)
-rcdv = rcdv.append(pd.read_excel(pickle_path('rcdv.xlsx')
-                                , sheet_name='1980'
-                                , header=0))
+if True:
+    '''
+    rcdv = pd.read_excel(pickle_path('rcdv.xlsx')
+                                    , sheet_name='1978'
+                                    , header=0)
+    rcdv = rcdv.append(pd.read_excel(pickle_path('rcdv.xlsx')
+                                    , sheet_name='1980'
+                                    , header=0))
 
-# merging two sheets brought in row numbers
-rcdv.reset_index()
+    # merging two sheets brought in row numbers
+    rcdv.reset_index()
 
-# remove cols we don't want. rename file to miss as it is needed to indicate where were missing values
-rcdv.drop(labels='Column1', axis=1, inplace=True)
-rcdv.columns = ['miss' if vn == 'file' else vn for vn in rcdv.columns]
+    # remove cols we don't want. rename file to miss as it is needed to indicate where were missing values
+    rcdv.drop(labels='Column1', axis=1, inplace=True)
+    rcdv.columns = ['miss' if vn == 'file' else vn for vn in rcdv.columns]
 
-var_names=list(rcdv)[:16] + list(rcdv)[17:] + list(rcdv)[16:17] # put recid to the end
-rcdv = rcdv[var_names]
+    var_names=list(rcdv)[:16] + list(rcdv)[17:] + list(rcdv)[16:17] # put recid to the end
+    rcdv = rcdv[var_names]
 
-vars_types = ['nominal'
-            , 'nominal'
-            , 'nominal'
-            , 'nominal'
-            , 'nominal'
-            , 'nominal'
-            , 'nominal'
-            , 'nominal'
-            , 'nominal'
-            , 'nominal'
-            , 'continuous'
-            , 'continuous'
-            , 'continuous'
-            , 'continuous'
-            , 'continuous'
-            , 'continuous'
-            , 'nominal'
-            , 'continuous'
-            , 'nominal'
-            , 'nominal']
+    vars_types = ['nominal'
+                , 'nominal'
+                , 'nominal'
+                , 'nominal'
+                , 'nominal'
+                , 'nominal'
+                , 'nominal'
+                , 'nominal'
+                , 'nominal'
+                , 'nominal'
+                , 'continuous'
+                , 'continuous'
+                , 'continuous'
+                , 'continuous'
+                , 'continuous'
+                , 'continuous'
+                , 'nominal'
+                , 'continuous'
+                , 'nominal'
+                , 'nominal']
 
-class_col = 'recid'
-features = [vn for vn in var_names if vn != class_col]
+    class_col = 'recid'
+    features = [vn for vn in var_names if vn != class_col]
 
-# recode priors, all that were set to -9 were missing, and it is logged in the file variable (3 = missing data indicator)
-rcdv['priors'] = rcdv['priors'].apply(lambda x: 0 if x == -9 else x)
-rcdv['miss'] = rcdv['miss'].apply(lambda x: 1 if x == 3 else 0)
+    # recode priors, all that were set to -9 were missing, and it is logged in the file variable (3 = missing data indicator)
+    rcdv['priors'] = rcdv['priors'].apply(lambda x: 0 if x == -9 else x)
+    rcdv['miss'] = rcdv['miss'].apply(lambda x: 1 if x == 3 else 0)
 
-# remove cols we don't want. Time is only useful in survival analysis. Correlates exactly with recid.
-to_be_del = ['time']
-for tbd in to_be_del:
-    del rcdv[tbd]
-    del vars_types[np.where(np.array(var_names) == tbd)[0][0]]
-    del var_names[np.where(np.array(var_names) == tbd)[0][0]]
-    del features[np.where(np.array(features) == tbd)[0][0]]
+    # remove cols we don't want. Time is only useful in survival analysis. Correlates exactly with recid.
+    to_be_del = ['time']
+    for tbd in to_be_del:
+        del rcdv[tbd]
+        del vars_types[np.where(np.array(var_names) == tbd)[0][0]]
+        del var_names[np.where(np.array(var_names) == tbd)[0][0]]
+        del features[np.where(np.array(features) == tbd)[0][0]]
 
-# save it out for # R
-rcdv.to_csv(pickle_path('rcdv.csv.gz'), index=False, compression='gzip')
-
+    # save it out
+    rcdv.to_csv(pickle_path('rcdv.csv.gz'), index=False, compression='gzip')
+    '''
+    
+rcdv = pd.read_csv(pickle_path('rcdv.csv.gz'), compression='gzip')
 # the following creates a copy of the data frame with int mappings of categorical variables for scikit-learn
 # and also a dictionary containing the label encoders/decoders for each column
 rcdv_pre = pd.DataFrame.copy(rcdv)

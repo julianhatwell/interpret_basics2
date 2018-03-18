@@ -42,7 +42,7 @@ seed=123
 
 var_names = ['age'
            , 'workclass'
-           , 'fnlwgt'
+           , 'lfnlwgt'
            , 'education'
            , 'educationnum'
            , 'maritalstatus'
@@ -50,8 +50,8 @@ var_names = ['age'
            , 'relationship'
            , 'race'
            , 'sex'
-           , 'capitalgain'
-           , 'capitalloss'
+           , 'lcapitalgain'
+           , 'lcapitalloss'
            , 'hoursperweek'
            , 'nativecountry'
            , 'income']
@@ -75,25 +75,47 @@ vars_types = ['continuous'
 class_col = 'income'
 features = [vn for vn in var_names if vn != class_col]
 
-url="https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data"
-s=requests.get(url).content
-adult_train = pd.read_csv(io.StringIO(s.decode('utf-8')), names=var_names)
+if True:
 
-url="https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.test"
-s=requests.get(url).content
-adult_test = pd.read_csv(io.StringIO(s.decode('utf-8')), names=var_names, skiprows=1)
+    url="https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data"
+    s=requests.get(url).content
+    adult_train = pd.read_csv(io.StringIO(s.decode('utf-8')), names=var_names)
 
-# combine the two datasets and split them later with standard code
-frames = [adult_train, adult_test]
-adult = pd.concat(frames)
+    url="https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.test"
+    s=requests.get(url).content
+    adult_test = pd.read_csv(io.StringIO(s.decode('utf-8')), names=var_names, skiprows=1)
 
-# some tidying required
-adult.income = adult.income.str.replace('.', '')
-for f, t in zip(var_names, vars_types):
-    if t == 'continuous':
-        adult[f] = adult[f].astype('int32')
-    else:
-        adult[f] = adult[f].str.replace(' ', '')
+    # combine the two datasets and split them later with standard code
+    frames = [adult_train, adult_test]
+    adult = pd.concat(frames)
+
+    # some tidying required
+    adult.income = adult.income.str.replace('.', '')
+    for f, t in zip(var_names, vars_types):
+        if t == 'continuous':
+            adult[f] = adult[f].astype('int32')
+        else:
+            adult[f] = adult[f].str.replace(' ', '')
+    qm_to_unk = lambda w: 'Unknown' if w == '?' else w
+    tt_fix = lambda w: 'Trinidad and Tobago' if w == 'Trinadad&Tobago' else w
+    adult['workclass'] = adult.workclass.apply(qm_to_unk)
+    adult['nativecountry'] = adult.nativecountry.apply(qm_to_unk)
+    adult['nativecountry'] = adult.nativecountry.apply(tt_fix)
+
+    lending['lcaptialgain'] = np.log(lending['lcaptialgain'] + abs(lending['lcaptialgain'].min()) + 1)
+    lending['lcaptialloss'] = np.log(lending['lcaptialloss'] + abs(lending['lcaptialloss'].min()) + 1)
+    lending['lfnlwgt'] = np.log(lending['lfnlwgt'] + abs(lending['lfnlwgt'].min()) + 1)
+
+    # create a small set that is easier to play with on a laptop
+    adult_samp = adult.sample(frac=0.25, random_state=seed).reset_index()
+    adult_samp.drop(labels='index', axis=1, inplace=True)
+
+    adult.to_csv(pickle_path('adult.csv.gz'), index=False, compression='gzip')
+    adult_samp.to_csv(pickle_path('adult_samp.csv.gz'), index=False, compression='gzip')
+    
+
+adult = pd.read_csv(pickle_path('adult.csv.gz'), compression='gzip')
+
 
 # the following creates a copy of the data frame with int mappings of categorical variables for scikit-learn
 # and also a dictionary containing the label encoders/decoders for each column

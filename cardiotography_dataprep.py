@@ -104,22 +104,29 @@ vars_types = ['continuous'
 class_col = 'NSP'
 features = [vn for vn in var_names if vn != class_col]
 
-cardiotography = pd.read_excel(pickle_path('CTG.xlsx')
-                                , header=None
-                                , names=var_names)
+if True:
+    '''
+    cardiotography = pd.read_excel(pickle_path('CTG.xlsx')
+                                    , header=None
+                                    , names=var_names)
 
-# re-code NSP and delete class variable
-NSP = pd.Series(['N'] * cardiotography.shape[0])
-NSP.loc[cardiotography.NSP.values == 2] = 'S'
-NSP.loc[cardiotography.NSP.values == 3] = 'P'
-cardiotography.NSP = NSP
+    # re-code NSP and delete class variable
+    NSP = pd.Series(['N'] * cardiotography.shape[0])
+    NSP.loc[cardiotography.NSP.values == 2] = 'S'
+    NSP.loc[cardiotography.NSP.values == 3] = 'P'
+    cardiotography.NSP = NSP
 
-to_be_del = ['CLASS']
-for tbd in to_be_del:
-    del cardiotography[tbd]
-    del vars_types[np.where(np.array(var_names) == tbd)[0][0]]
-    del var_names[np.where(np.array(var_names) == tbd)[0][0]]
-    del features[np.where(np.array(features) == tbd)[0][0]]
+    to_be_del = ['CLASS']
+    for tbd in to_be_del:
+        del cardiotography[tbd]
+        del vars_types[np.where(np.array(var_names) == tbd)[0][0]]
+        del var_names[np.where(np.array(var_names) == tbd)[0][0]]
+        del features[np.where(np.array(features) == tbd)[0][0]]
+
+    cardiotography.to_csv(pickle_path('cardiotography.csv.gz'), index=False, compression='gzip')
+    '''
+    
+cardiotography = pd.read_csv(pickle_path('cardiotography.csv.gz'), compression='gzip')
 
 # the following creates a copy of the data frame with int mappings of categorical variables for scikit-learn
 # and also a dictionary containing the label encoders/decoders for each column
