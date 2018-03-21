@@ -1,4 +1,5 @@
 import urllib
+import sys
 import os
 import pandas as pd
 import numpy as np
@@ -44,7 +45,10 @@ def rstr(df):
 
 # helper function for pickling files
 def pickle_path(filename):
-    return(pickle_dir + '\\' + filename)
+    if sys.platform == 'Win32':
+        return(pickle_dir + '\\' + filename)
+    else:
+        return(pickle_dir + '/' + filename)
 
 # random seed for test_train_split
 seed=123
