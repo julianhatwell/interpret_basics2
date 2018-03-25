@@ -3,6 +3,7 @@ import numpy as np
 from pandas import DataFrame, Series
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 from sklearn.model_selection import train_test_split
+from collections import deque
 from scipy.stats import sem
 from itertools import chain
 
@@ -86,6 +87,13 @@ class data_container:
         # flatten out the nesting
         self.onehot_features = list(chain.from_iterable(self.onehot_features))
 
+        if len(self.categorical_features) > 0:
+            encoder = OneHotEncoder(categorical_features=self.categorical_features)
+            encoder.fit(self.data_pre.as_matrix())
+            self.encoder = encoder
+        else:
+            self.encoder = None
+
     # helper function for pickling files
     def pickle_path(self, filename = ''):
         return(self.pickle_dir + path_sep + filename)
@@ -116,9 +124,7 @@ class data_container:
         # one hot encoding required for classifier
         # otherwise integer vectors will be treated as ordinal
         # OneHotEncoder takes an integer list as an argument to state which columns to encode
-        encoder = OneHotEncoder(categorical_features=self.categorical_features)
-        encoder.fit(self.data_pre.as_matrix())
-        X_train_enc = encoder.transform(X_train)
+        X_train_enc = self.encoder.transform(X_train)
 
         return({
         'X_train': X_train,
@@ -126,13 +132,14 @@ class data_container:
         'X_test' : X_test,
         'y_train' : y_train,
         'y_test' : y_test,
-        'encoder' : encoder})
+        'encoder' : self.encoder})
 
 class forest_paths_container:
     def __init__(self
     , forest_paths
     , by_tree):
         self.by_tree = by_tree
+        self.forest_paths = forest_paths
 
 class forest_walker:
 
@@ -333,10 +340,23 @@ class forest_walker:
         statistics['all_classes'] = self.forest_stats_by_label()
         return(statistics)
 
-    def tree_walk(tree, instances, labels = None, feature_encoding = None, features = None):
+    # helper function to encode features prior to sending into forest for path analysis
+    def enc_features(self, instances, feature_encoding):
+        if feature_encoding is None:
+            n_features = instances.shape[1]
+            addendum = "\n"
+        else:
+            instances = feature_encoding.transform(instances)
+            if 'todense' in dir(instances): # it's a sparse matrix
+                instances = instances.todense()
+            n_features = instances.shape[1]
+            addendum = "(after encoding)\n"
+        return(instances, n_features, addendum)
+
+    def tree_walk(self, tree, instances, labels = None, features = None):
 
         n_instances = instances.shape[0]
-        instances, n_features, addendum = enc_features(instances, feature_encoding)
+        instances, n_features, addendum = self.enc_features(instances, self.encoder)
 
         feature = tree.tree_.feature
         threshold = tree.tree_.threshold
@@ -388,17 +408,14 @@ class forest_walker:
 
         return(instance_paths)
 
-    def forest_walk(self, instances, labels = None, feature_encoding = None, by_tree=True):
-        # TO DO: define a class that has a self attribute determining whether organinsed by tree or by instance.
-        # TO DO: as above with possiblity to flip between?
-        # TO DO: some of the functions like get_paths() can then belong to the class
+    def forest_walk(self, instances, labels = None, by_tree=True):
+        # TO DO: as above with possiblity to flip between by_tree=True and by_tree=False?
 
         tree_paths = [[]] * len(self.forest.estimators_)
         for i, t in enumerate(self.forest.estimators_):
-            tree_paths[i] = tree_walk(tree = t
+            tree_paths[i] = self.tree_walk(tree = t
                                        , instances = instances
                                        , labels = labels
-                                       , feature_encoding = feature_encoding
                                        , features = self.features)
         if by_tree:
             forest_paths = forest_paths_container(tree_paths, by_tree)
@@ -409,4 +426,17 @@ class forest_walker:
                 instance_paths[i] =  [tp[i] for tp in tree_paths]
             forest_paths = forest_paths_container(instance_paths, by_tree)
 
-        self.walked_paths = forest_paths
+        return(forest_paths)
+
+class batch_getter:
+
+    def __init__(self, instances, labels):
+        self.instances = instances
+        self.labels = labels
+        self.current_row = 0
+
+    def get_next(self, batch_size = 1):
+        instances_out = self.instances[self.current_row:self.current_row + batch_size]
+        labels_out = self.labels[self.current_row:self.current_row + batch_size]
+        self.current_row += batch_size
+        return(instances_out, labels_out)

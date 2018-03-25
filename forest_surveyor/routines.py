@@ -141,4 +141,10 @@ def cor_incor_forest_survey(f_walker, X, y):
 
     return(f_cor_stats, f_incor_stats)
 
-# def walk_paths(f_walker, X, y = None, by_tree=True):
+def walk_paths(f_walker, batch_size = 1, n_batches = 1, by_tree=False):
+
+    paths = f_walker.forest_walk(instances = instances
+                , labels = labels
+                , feature_encoding = data_container.encoder
+                , by_tree = by_tree)
+    return(paths)

@@ -1,9 +1,10 @@
 # experimental script
 import json
 from forest_surveyor.datasets import credit_data
-from forest_surveyor.routines import tune_rf, train_rf, evaluate_model, cor_incor_forest_survey
-from forest_surveyor.structures import forest_walker
+from forest_surveyor.structures import forest_walker, batch_getter
+from forest_surveyor.routines import tune_rf, train_rf, evaluate_model, walk_paths, cor_incor_forest_survey
 from forest_surveyor.plotting import log_ratio_plot
+import forest_surveyor.routines as rtn
 
 # load a data set
 mydata = credit_data()
@@ -41,6 +42,16 @@ f_walker = forest_walker(forest = rf,
  features=mydata.onehot_features,
  encoder=tt['encoder'],
  prediction_model=enc_rf)
+
+# run the batch based forest walker
+getter = batch_getter(instances=tt['X_test'], labels=tt['y_test'])
+instances, labels = getter.get_next()
+
+paths = f_walker.forest_walk(instances = instances
+                            , labels = labels
+                            , by_tree = False)
+
+# walk_paths(mydata, f_walker)
 
 # run the full forest survey
 # to do - re do lighter version of survey that takes up less memory, from original forest survey function
