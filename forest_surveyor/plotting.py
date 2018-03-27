@@ -1,8 +1,12 @@
+import numpy as np
 import matplotlib as mpl
 mpl.use('TkAgg')
 import matplotlib.pyplot as plt
-import numpy as np
+from matplotlib.ticker import MaxNLocator
+from pandas import Series
 from itertools import product
+from cycler import cycler
+from math import floor, log2
 
 # helper function for plotting conf mat
 def plot_confusion_matrix(cm, class_names=None,
@@ -78,3 +82,209 @@ def log_ratio_plot(num, denom, labels, num_err=None, denom_err=None, top=3):
         return(log_ratio, yerr)
     else:
         return(log_ratio)
+
+# helper function for plotting comparison mean path lengths from a forest stats dictionary
+def plot_mean_path_lengths(forest_stats, class_names=None):
+
+    classes = [c for c in forest_stats]
+    mean_path_lengths = np.zeros(len(classes))
+    sd_path_lengths = np.zeros(len(classes))
+
+    for i, c in enumerate(classes):
+        mean_path_lengths[i] = forest_stats[c]['m_path_length']
+        sd_path_lengths[i] = forest_stats[c]['sd_path_length']
+
+    if class_names:
+        classes[:len(class_names)] = class_names
+
+    plt.bar(range(len(classes)),
+            mean_path_lengths,
+            yerr=sd_path_lengths,
+            tick_label=classes)
+    plt.title('Mean and St.Dev of Decision Path Length by Class')
+    plt.ylabel('Root-to-leaf length (number of nodes)')
+    plt.show()
+
+def plot_varimp(forest, features, ordered=False):
+    fig, ax = plt.subplots(1, 1, figsize=(11,3))
+    x_pos = range(len(features))
+    if ordered:
+        imp = Series(forest.feature_importances_, index=features).sort_values(ascending=False)
+    else:
+        imp = Series(forest.feature_importances_, index=features)
+    ax.stem(x_pos, imp)
+    ax.set_ylabel('Importance %')
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(imp.index, rotation='vertical')
+    ax.set_title('Variable Importance Plot')
+    plt.show()
+
+# helper for plotting varimp
+def plot_feature_stats(forest_stats, stat_name,
+ class_names=None, features=None):
+
+    plotting_data = [[forest_stats[k][stat_name]] for k in forest_stats.keys() if k != 'all_classes']
+    n = len(forest_stats)
+
+    plt.rcParams['axes.prop_cycle'] = cycler(color='bgrcmyk')
+
+    x_pos = [i for i in range(len(features))]
+    fig, ax = plt.subplots(1, 1, figsize=(11,3))
+
+    stms = []
+    for s, stat in enumerate(plotting_data):
+        linefmt = 'C' + str(s) + '-'
+        markerfmt = 'C' + str(s) + 'o'
+
+        stm = ax.stem(x_pos, stat[0], markerfmt=markerfmt, linefmt=linefmt)
+        ax.set_xticks(x_pos)
+        if features is not None:
+            ax.set_xticklabels(features, rotation='vertical')
+        ax.set_title(stat_name)
+        x_pos = [i + 0.2 for i in x_pos]
+        stms.append(stm)
+
+    if class_names is not None:
+        plt.legend(stms, class_names)
+    else: plt.legend(stms)
+    plt.show()
+
+def resize_plot(ax, class_names, set_legend = True):
+    # Shrink current axis by 20%
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+    if set_legend:
+        ax.legend(title = 'classes', labels = class_names
+        , loc='center left', bbox_to_anchor=(1, 0.5))
+    return(ax)
+
+def add_maj_match(ax, isolation_pos):
+    height_just = floor(ax.get_ylim()[1])
+    if isolation_pos is None:
+        ax.annotate('target class not matched',
+                    xy=(0, height_just * 0.9))
+    else:
+        ax.axvline(isolation_pos, color = '0.75', ls = '--')
+        ax.annotate('target class matched',
+                    xy=(isolation_pos + 0.1, height_just * 0.9))
+    return(ax)
+
+def add_max_score(ax, score, isolation_pos):
+    max_score = np.max(score)
+    adj_max_score = np.max(score[isolation_pos:])
+    ax.axhline(max_score, color = 'k', ls = '--')
+
+    if adj_max_score < max_score:
+        ax.annotate('max score', xy=(0.5, max_score - 0.15))
+        ax.axhline(adj_max_score, color = '0.5', ls = '--')
+        right_just = floor(ax.get_xlim()[1])
+        ax.annotate('max score on correct prediction',
+                    xy=(right_just / 2, adj_max_score - 0.15))
+    else:
+        ax.annotate('max score on correct prediction', xy=(0.5, max_score - 0.15))
+
+def trace_covprecis_plot(ax, measures, measure):
+    ax.plot(measures)
+    ax.set_ylim(0.0, 1.0)
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.set_title('Rule ' + measure)
+    ax.set_ylabel(measure)
+    ax.set_xlabel('number of terms')
+    return(ax)
+
+def plot_ig_dist(rule_accumulator, class_names):
+
+    fig, [ax1, ax2, ax3] = plt.subplots(nrows=3, ncols=1, figsize=(8, 6), dpi=80
+                                    , facecolor='w', edgecolor='k')
+
+    ax1.plot(rule_accumulator.cum_info_gain)
+    ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax1.axhline(rule_accumulator.max_ent, color = 'k', ls = '--')
+    ax1.axhline(rule_accumulator.model_info_gain, color = '0.5', ls = '--')
+    ax1.axhline(rule_accumulator.prior_info, color = '0.75', ls = '--')
+    ax1.set_title('IG per term added to rule')
+    ax1.set_ylabel('Cum. Info. Gain')
+    right_just = floor(ax1.get_xlim()[1])
+    ax1.annotate('max entropy for ' + str(rule_accumulator.n_classes) + ' class problem',
+                xy=(0.5, rule_accumulator.max_ent - 0.15))
+    ax1.annotate('model info gain',
+                xy=(right_just / 2, rule_accumulator.model_info_gain - 0.15))
+    ax1.annotate('prior information',
+                xy=(right_just - 2, rule_accumulator.prior_info + 0.05))
+
+    ax2.plot(rule_accumulator.pri_and_post)
+    ax2.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax2.set_ylim(0.0, 1.0)
+    ax2 = add_maj_match(ax2, rule_accumulator.isolation_pos)
+    ax2.set_title('Posterior distributions (Precision wrt Class)')
+    ax2.set_ylabel('P(y = class)')
+
+    ax3.plot(np.log(rule_accumulator.pri_and_post_counts + 1))
+    ax3.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax3 = add_maj_match(ax3, rule_accumulator.isolation_pos)
+    ax3.set_title('Number of instances')
+    ax3.set_ylabel('log(counts)')
+
+    ax1 = resize_plot(ax1, class_names, set_legend=False)
+    ax2 = resize_plot(ax2, class_names)
+    ax3 = resize_plot(ax3, class_names)
+
+    fig.suptitle('Rule trace through scoring sample', fontsize=12)
+    fig.tight_layout(rect=[0, 0.0, 1, 0.95])
+
+    plt.show()
+
+def plot_coverage_precision(rule_accumulator, class_names):
+    # plot the rule trace based on coverage and precision
+    fig, [ax1, ax2, ax3] = plt.subplots(nrows=3, ncols=1, figsize=(8, 6), dpi=80
+                                    , facecolor='w', edgecolor='k')
+
+    ax1 = trace_covprecis_plot(ax1, rule_accumulator.coverage, 'Coverage')
+    ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax2 = trace_covprecis_plot(ax2, rule_accumulator.pri_and_post_coverage, 'Coverage wrt Class')
+    ax2.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax2 = add_maj_match(ax2, rule_accumulator.isolation_pos)
+    ax2 = resize_plot(ax2, class_names)
+    ax3 = trace_covprecis_plot(ax3, rule_accumulator.pri_and_post_accuracy, 'Accuracy wrt Class')
+    ax3.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax3 = add_maj_match(ax3, rule_accumulator.isolation_pos)
+    ax3 = resize_plot(ax3, class_names)
+
+    fig.suptitle('Rule trace through scoring sample', fontsize=12)
+    fig.tight_layout(rect=[0, 0.0, 1, 0.95])
+
+    plt.show()
+
+# plot the rule trace based on entropy and posteriors
+def plot_rule_scores(rule_accumulator, class_names, alpha=0.5):
+
+    fig, [ax1, ax2, ax3] = plt.subplots(nrows=3, ncols=1, figsize=(8, 6), dpi=80
+                                    , facecolor='w', edgecolor='k')
+
+    pca, score1, score2 = rule_accumulator.score_rule(alpha)
+    ax1 = trace_covprecis_plot(ax1, pca, 'Measures wrt Target')
+    ax1 = add_maj_match(ax1, rule_accumulator.isolation_pos)
+    ax1 = resize_plot(ax1, ['Precision', 'Coverage', 'Accuracy'])
+
+    ax2 = trace_covprecis_plot(ax2, score1, 'Score Function 1')
+    ax2 = add_maj_match(ax2, rule_accumulator.isolation_pos)
+    ax2 = add_max_score(ax2, score1, rule_accumulator.isolation_pos)
+
+    ax3 = trace_covprecis_plot(ax3, score2, 'Score Function 2')
+    ax3 = add_maj_match(ax3, rule_accumulator.isolation_pos)
+    ax3 = add_max_score(ax3, score2, rule_accumulator.isolation_pos)
+
+    fig.suptitle('Rule trace through scoring sample', fontsize=12)
+    fig.tight_layout(rect=[0, 0.0, 1, 0.95])
+
+    plt.show()
+
+# plot the rule trace based on entropy and posteriors
+def rule_profile_plots(rule_accumulator, class_names, alpha=0.5, ig=True, cp=True, rs=True):
+
+    if ig:
+        plot_ig_dist(rule_accumulator, class_names)
+    if cp:
+        plot_coverage_precision(rule_accumulator, class_names)
+    if rs:
+        plot_rule_scores(rule_accumulator, class_names, alpha)

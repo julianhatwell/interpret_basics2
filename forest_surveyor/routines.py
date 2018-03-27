@@ -1,9 +1,11 @@
 import json
 import time
 import timeit
-import numpy as np # check if need *. so far it's only np.unique in f_survey routine
+import pickle
+import numpy as np
 from pandas import DataFrame
 from forest_surveyor.plotting import plot_confusion_matrix
+from forest_surveyor.structures import rule_accumulator
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import ParameterGrid
 from sklearn.pipeline import make_pipeline
@@ -141,10 +143,50 @@ def cor_incor_forest_survey(f_walker, X, y):
 
     return(f_cor_stats, f_incor_stats)
 
-def walk_paths(f_walker, batch_size = 1, n_batches = 1, by_tree=False):
+def run_batches(f_walker, getter,
+ data_container, sample_instances, sample_labels,
+ batch_size = 1, n_batches = 1, alpha= 0.5):
+    results = [[]] * (batch_size * n_batches)
+    best_rule = [[]] * (batch_size * n_batches)
+    for b in range(n_batches):
+        instances, labels = getter.get_next(batch_size)
 
-    paths = f_walker.forest_walk(instances = instances
-                , labels = labels
-                , feature_encoding = data_container.encoder
-                , by_tree = by_tree)
-    return(paths)
+        walked = f_walker.forest_walk(instances = instances
+                                , labels = labels)
+
+        # rearrange paths by instances
+        walked.flip()
+
+        for i in range(batch_size):
+            walked.set_paths(i-1, which_trees='majority')
+            walked.discretize_paths(data_container.var_dict)
+            walked.set_patterns()
+            ra = rule_accumulator(data_container=data_container, paths_container=walked)
+            ra.profile(sample_instances=sample_instances, sample_labels=sample_labels)
+            ra.prune_rule()
+
+            results[b * batch_size + i] = [
+            [p[ra.target_class] for p in ra.pri_and_post], # should be the same as precision below
+            [c[ra.target_class] for c in ra.pri_and_post_coverage],
+            [a[ra.target_class] for a in ra.pri_and_post_accuracy],
+            ra.precision,
+            ra.isolation_pos,
+            len(ra.pruned_rule)]
+
+            _, score1, score2 = ra.score_rule(alpha)
+            adj_max_score1 = np.max(score1[ra.isolation_pos:])
+            score1_loc = np.where(np.array(score1 == adj_max_score1))[0][0]
+            adj_max_score2 = np.max(score2[ra.isolation_pos:])
+            score2_loc = np.where(np.array(score2 == adj_max_score2))[0][0]
+
+            ra_best = rule_accumulator(data_container=data_container, paths_container=walked)
+            ra_best.profile(sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=score2_loc)
+            ra_best.prune_rule()
+
+            best_rule[b * batch_size + i] = [ra_best.pruned_rule]
+
+    results_store = open(data_container.pickle_path('results.pickle'), "wb")
+    pickle.dump(results, results_store)
+    results_store.close()
+
+    return(ra, results, best_rule)

@@ -107,7 +107,6 @@ def plot_confusion_matrix(cm, classes,
     plt.xlabel('Predicted label')
 
 # helper function for plotting comparison mean path lengths from a forest stats dictionary
-# TO DO standard error bars
 def plot_mean_path_lengths(explore_forest_stats, class_labels=None):
 
     classes = [c for c in explore_forest_stats]
