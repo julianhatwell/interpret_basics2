@@ -1,8 +1,10 @@
-import numpy as np
+from forest_surveyor import in_ipynb
 import matplotlib as mpl
-mpl.use('TkAgg')
+if not in_ipynb():
+    mpl.use('TkAgg')
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
+import numpy as np
 from pandas import Series
 from itertools import product
 from cycler import cycler

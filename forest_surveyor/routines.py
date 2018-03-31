@@ -3,13 +3,60 @@ import time
 import timeit
 import pickle
 import numpy as np
+import multiprocessing as mp
 from pandas import DataFrame
 from forest_surveyor.plotting import plot_confusion_matrix
 from forest_surveyor.structures import rule_accumulator
+from forest_surveyor.mp_callable import mp_run_rf
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import ParameterGrid
 from sklearn.pipeline import make_pipeline
 from sklearn.metrics import confusion_matrix, cohen_kappa_score
+
+def tune_rf_mp(X, y, grid = None, random_state=123, save_path = None):
+
+    if grid is None:
+        grid = ParameterGrid({
+            'n_estimators': [(i + 1) * 500 for i in range(3)]
+            , 'max_depth' : [i for i in [8, 16]]
+            , 'min_samples_leaf' : [1, 5]
+            })
+
+    start_time = timeit.default_timer()
+
+    # Define an output queue
+    output = mp.Queue()
+
+    # List of processes that we want to run
+    processes = [mp.Process(target=mp_run_rf, args=(X, y, g, random_state, output)) for g in grid]
+
+    print(str(len(grid)) + ' runs to do')
+    print()
+    print('Going parallel...')
+
+    # Run processes
+    for p in processes:
+        p.start()
+
+    # Exit the completed processes
+    for p in processes:
+        p.join()
+
+    # Get process results from the output queue
+    params = [output.get() for p in processes]
+
+    print('Completed ' + str(len(params)) + ' run(s) and exited parallel')
+    print()
+    elapsed = timeit.default_timer() - start_time
+    print('Time elapsed:', "{:0.4f}".format(elapsed), 'seconds')
+
+    if save_path is not None:
+        with open(save_path + 'params.json', 'w') as outfile:
+            json.dump(params, outfile)
+
+    params = DataFrame(params).sort_values(['score','n_estimators','max_depth','min_samples_leaf'],
+                                            ascending=[False, True, True, False])
+    return(params)
 
 def tune_rf(X, y, grid = None, random_state=123, save_path = None):
 
@@ -54,6 +101,8 @@ def tune_rf(X, y, grid = None, random_state=123, save_path = None):
         with open(save_path + 'params.json', 'w') as outfile:
             json.dump(params, outfile)
 
+    params = DataFrame(params).sort_values(['score','n_estimators','max_depth','min_samples_leaf'],
+                                            ascending=[False, True, True, False])
     return(params)
 
 def train_rf(X, y, params = None, encoder = None, random_state = 123):
@@ -183,10 +232,14 @@ def run_batches(f_walker, getter,
             ra_best.profile(sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=score2_loc)
             ra_best.prune_rule()
 
-            best_rule[b * batch_size + i] = [ra_best.pruned_rule]
+            best_rule[b * batch_size + i] = [ra_best.pruned_rule, adj_max_score1, adj_max_score2, len(ra_best.pruned_rule)]
 
     results_store = open(data_container.pickle_path('results.pickle'), "wb")
     pickle.dump(results, results_store)
     results_store.close()
+
+    best_rule_store = open(data_container.pickle_path('best_rule.pickle'), "wb")
+    pickle.dump(best_rule, best_rule_store)
+    best_rule_store.close()
 
     return(ra, results, best_rule)

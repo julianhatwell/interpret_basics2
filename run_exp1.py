@@ -47,7 +47,7 @@ f_walker = forest_walker(forest = rf,
 # run the batch based forest walker
 getter = batch_getter(instances=tt['X_test'], labels=tt['y_test'])
 
-n = 1
+n = 5
 # rule_acc is just the last rule rule_accumulator, results are for the whole batch
 rule_acc, results, best_rule = run_batches(f_walker=f_walker,
  getter=getter,
@@ -56,7 +56,7 @@ rule_acc, results, best_rule = run_batches(f_walker=f_walker,
  sample_labels=tt['y_train'],
  batch_size = n, n_batches = 1)
 
-rule_profile_plots(rule_acc, mydata.class_names, alpha=0.5)
+# rule_profile_plots(rule_acc, mydata.class_names, alpha=0.5)
 
 # run the full forest survey
 # to do - re do lighter version of survey that takes up less memory, from original forest survey function

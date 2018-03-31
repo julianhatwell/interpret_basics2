@@ -1,5 +1,73 @@
 import urllib
 import pandas as pd
+from datetime import datetime
+import julian
+
+# accident from Source
+if True:
+    '''
+    import pandas as pd
+    import numpy as np
+    from datetime import datetime
+    import julian
+    jul_conv = lambda x : 0 if x[0] == 'nan' or x[1] == 'nan' else julian.to_jd(datetime.strptime(x[0] + ' ' + x[1], '%d/%m/%Y %M:%S'))
+
+    pickle_dir = 'accident_pickles'
+
+    # helper function for data frame str / summary
+    def rstr(df):
+        return df.shape, df.apply(lambda x: [x.unique()])
+
+    # random seed for train test split and sampling
+    random_state = 123
+
+    vtypes = {'Accident_Index' : object, 'Location_Easting_OSGR' : np.float64, 'Location_Northing_OSGR' : np.float64,
+           'Longitude' : np.float64, 'Latitude' : np.float64, 'Police_Force' : np.uint8, 'Accident_Severity' : np.uint8,
+           'Number_of_Vehicles' : np.uint8, 'Number_of_Casualties' : np.uint8, 'Date' : object, 'Day_of_Week' : np.uint8,
+           'Time' : object, 'Local_Authority_(District)' : np.uint16, 'Local_Authority_(Highway)' : object,
+           '1st_Road_Class' : np.uint8, '1st_Road_Number' : np.uint16, 'Road_Type' : np.float16, 'Speed_limit' : np.float16,
+           'Junction_Detail' : np.float16, 'Junction_Control' : np.float16, '2nd_Road_Class' : np.float16,
+           '2nd_Road_Number' : np.float16, 'Pedestrian_Crossing-Human_Control' : np.float16,
+           'Pedestrian_Crossing-Physical_Facilities' : np.float16, 'Light_Conditions' : np.float16,
+           'Weather_Conditions' : np.float16, 'Road_Surface_Conditions' : np.float16,
+           'Special_Conditions_at_Site' : np.float16, 'Carriageway_Hazards' : np.float16,
+           'Urban_or_Rural_Area' : np.uint8, 'Did_Police_Officer_Attend_Scene_of_Accident' : np.uint8,
+           'LSOA_of_Accident_Location' : object}
+
+    accident = pd.read_csv('data_source_files\\Accidents.csv', dtype=vtypes, low_memory=False)
+
+    # recode class_col
+    accident['Accident_Severity'] = accident['Accident_Severity'].replace({1 : 'Fatal', 2 : 'Serious', 3 : 'Slight'})
+
+    # convert date and time to julian
+    accident['Date_j'] = pd.Series([(str(d), str(t)) for d, t in zip(accident['Date'], accident['Time'])]).map(jul_conv)
+    # tidy where necessary
+    accident['Local_Authority_(Highway)'] = accident['Local_Authority_(Highway)'].str.slice(stop=3)
+    # and drop unecessary/noisy columns
+    accident.drop(labels=['Date', 'Time', 'Accident_Index', 'LSOA_of_Accident_Location'], axis=1, inplace=True)
+
+    # get rid of na
+    accident = accident.fillna(0.0)
+
+    # rearrange so class col at end
+    class_col = 'Accident_Severity'
+    pos = np.where(accident.columns == class_col)[0][0]
+    var_names = list(accident.columns[:pos]) + list(accident.columns[pos + 1:]) + list(accident.columns[pos:pos + 1])
+    accident = accident[var_names]
+
+    # save
+    accident.to_csv('forest_surveyor\\datafiles\\accident.csv.gz', index=False, compression='gzip')
+
+    # create small set that is easier to play with on a laptop
+    samp = accident.sample(frac=0.1, random_state=random_state).reset_index()
+    samp.drop(labels='index', axis=1, inplace=True)
+    samp.to_csv('forest_surveyor\\datafiles\\accident_samp.csv.gz', index=False, compression='gzip')
+
+    samp = accident.sample(frac=0.01, random_state=random_state).reset_index()
+    samp.drop(labels='index', axis=1, inplace=True)
+    samp.to_csv('forest_surveyor\\datafiles\\accident_small_samp.csv.gz', index=False, compression='gzip')
+    '''
+
 
 # car form source
 if True:

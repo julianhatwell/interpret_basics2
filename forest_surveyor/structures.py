@@ -11,11 +11,7 @@ from scipy.stats import sem, entropy
 from operator import itemgetter
 from itertools import chain
 from copy import deepcopy
-
-if sys.platform == 'win32':
-    path_sep = '\\'
-else:
-    path_sep = '/'
+from forest_surveyor import config as cfg
 
 class data_container:
 
@@ -36,7 +32,7 @@ class data_container:
         self.pickle_dir = pickle_dir
 
         if var_names is None:
-            self.var_names =list(self.data.columns)
+            self.var_names = list(self.data.columns)
         else:
             self.var_names = var_names
 
@@ -101,7 +97,10 @@ class data_container:
 
     # helper function for pickling files
     def pickle_path(self, filename = ''):
-        return(self.pickle_dir + path_sep + filename)
+        if len(cfg.project_dir) > 0:
+            return(cfg.project_dir + cfg.path_sep + self.pickle_dir + cfg.path_sep + filename)
+        else:
+            return(self.pickle_dir + cfg.path_sep + filename)
 
     # helper function for data frame str / summary
     def rstr(self):
@@ -138,6 +137,16 @@ class data_container:
         'y_train' : y_train,
         'y_test' : y_test,
         'encoder' : self.encoder})
+
+    def pretty_rule(self, rule):
+        Tr_Fa = lambda x, y, z : x + ' True' if ~y else x + ' False'
+        lt_gt = lambda x, y, z : x + ' <= ' + str(z) if y else x + ' > ' + str(z)
+        def bin_or_cont(x, y, z, onehot_dict):
+            if x in onehot_dict:
+                return(Tr_Fa(x,y,z))
+            else:
+                return(lt_gt(x,y,z))
+        return([bin_or_cont(f, t, v, self.onehot_dict) for f, t, v in rule])
 
 class paths_container:
     def __init__(self
@@ -633,7 +642,6 @@ class rule_accumulator:
         self.isolation_pos = None
         self.stopping_param = None
 
-
     def add_rule(self, p_total = 0.1):
         next_rule = self.patterns[self.unapplied_rules[0]]
         for item in next_rule[0]:
@@ -743,11 +751,15 @@ class rule_accumulator:
         # find a rule with only binary True values
         self.conj_rule = [r for r in self.pruned_rule if ~r[1]]
 
-    def apply_rule(self):
+    def apply_rule(self, rule=None, instances=None):
+        if rule is None:
+            rule = self.rule
+        if instances is None:
+            instances = self.sample_instances
         lt_gt = lambda x, y, z : x < y if z else x > y # if z is True, x < y else x > y
-        idx = np.full(self.sample_instances.shape[0], 1, dtype='bool')
-        for r in self.rule:
-            idx = np.logical_and(idx, lt_gt(self.sample_instances.getcol(self.onehot_features.index(r[0])).toarray().flatten(), r[2], r[1]))
+        idx = np.full(instances.shape[0], 1, dtype='bool')
+        for r in rule:
+            idx = np.logical_and(idx, lt_gt(instances.getcol(self.onehot_features.index(r[0])).toarray().flatten(), r[2], r[1]))
         return(idx)
 
     def profile(self, sample_instances, sample_labels
