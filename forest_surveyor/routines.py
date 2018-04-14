@@ -6,7 +6,7 @@ import numpy as np
 import multiprocessing as mp
 from pandas import DataFrame
 from forest_surveyor.plotting import plot_confusion_matrix
-from forest_surveyor.structures import rule_accumulator
+from forest_surveyor.structures import rule_accumulator, forest_walker, batch_getter
 from forest_surveyor.mp_callable import mp_run_rf
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import ParameterGrid
@@ -61,49 +61,55 @@ def tune_rf_mp(X, y, grid = None, random_state=123, save_path = None):
 def tune_rf(X, y, grid = None, random_state=123, save_path = None):
 
     # to do - test allowable structure of grid input
-
-    if grid is None:
-        grid = ParameterGrid({
-            'n_estimators': [(i + 1) * 500 for i in range(3)]
-            , 'max_depth' : [i for i in [8, 16]]
-            , 'min_samples_leaf' : [1, 5]
-            })
-
-    start_time = timeit.default_timer()
-
-    rf = RandomForestClassifier()
-    params = []
-    best_score = 0
-
-    print(str(len(grid)) + ' runs to do')
-    print()
-    for g in grid:
-        print('starting new run at: ' + time.asctime(time.gmtime()))
-        print(g)
-        tree_start_time = timeit.default_timer()
-        rf.set_params(oob_score = True, random_state=random_state, **g)
-        rf.fit(X, y)
-        tree_end_time = timeit.default_timer()
-        g['elapsed_time'] = tree_end_time - tree_start_time
-        g['score'] = rf.oob_score_
-        print('ending run at: ' + time.asctime(time.gmtime()))
-        params.append(g)
-        print('completed ' + str(len(params)) + ' run(s)')
+    try:
+        with open(save_path + 'params.json', 'r') as infile:
+            params = json.load(infile)
+        print('Using existing params file. To re-tune, delete file at ' + save_path + 'params.json')
         print()
-        if rf.oob_score_ > best_score:
-            best_score = rf.oob_score_
-            best_grid = g
+        return(params)
+    except:
+        if grid is None:
+            grid = ParameterGrid({
+                'n_estimators': [(i + 1) * 500 for i in range(3)]
+                , 'max_depth' : [i for i in [8, 16]]
+                , 'min_samples_leaf' : [1, 5]
+                })
 
-    elapsed = timeit.default_timer() - start_time
-    print('Time elapsed:', "{:0.4f}".format(elapsed), 'seconds')
+        start_time = timeit.default_timer()
 
-    if save_path is not None:
-        with open(save_path + 'params.json', 'w') as outfile:
-            json.dump(params, outfile)
+        rf = RandomForestClassifier()
+        params = []
+        best_score = 0
 
-    params = DataFrame(params).sort_values(['score','n_estimators','max_depth','min_samples_leaf'],
-                                            ascending=[False, True, True, False])
-    return(params)
+        print(str(len(grid)) + ' runs to do')
+        print()
+        for g in grid:
+            print('starting new run at: ' + time.asctime(time.gmtime()))
+            print(g)
+            tree_start_time = timeit.default_timer()
+            rf.set_params(oob_score = True, random_state=random_state, **g)
+            rf.fit(X, y)
+            tree_end_time = timeit.default_timer()
+            g['elapsed_time'] = tree_end_time - tree_start_time
+            g['score'] = rf.oob_score_
+            print('ending run at: ' + time.asctime(time.gmtime()))
+            params.append(g)
+            print('completed ' + str(len(params)) + ' run(s)')
+            print()
+            if rf.oob_score_ > best_score:
+                best_score = rf.oob_score_
+                best_grid = g
+
+        elapsed = timeit.default_timer() - start_time
+        print('Time elapsed:', "{:0.4f}".format(elapsed), 'seconds')
+
+        if save_path is not None:
+            with open(save_path + 'params.json', 'w') as outfile:
+                json.dump(params, outfile)
+
+        params = DataFrame(params).sort_values(['score','n_estimators','max_depth','min_samples_leaf'],
+                                                ascending=[False, True, True, False])
+        return(params)
 
 def train_rf(X, y, params = None, encoder = None, random_state = 123):
 
@@ -131,24 +137,29 @@ def train_rf(X, y, params = None, encoder = None, random_state = 123):
     if encoder is not None:
         enc_model = make_pipeline(encoder, rf)
         print("Created helper function enc_model(). A pipeline: feature encoding -> rf model")
+        print()
         return(rf, enc_model)
     else:
         print('No encoder was provided. An encoder is required if not all the data is numerical.')
-        return(rf)
+        print()
+        return(rf, rf)
 
-def evaluate_model(prediction_model, X, y, class_names=None):
+def evaluate_model(prediction_model, X, y, class_names=None, plot_cm=True, plot_cm_norm=True):
     pred = prediction_model.predict(X)
     print("Cohen's Kappa on unseen instances: " "{:0.4f}".format(cohen_kappa_score(y, pred)))
 
     # view the confusion matrix
     cm = confusion_matrix(y, pred)
-    plot_confusion_matrix(cm, class_names=class_names,
-                          title='Confusion matrix, without normalization')
+    if plot_cm:
+        plot_confusion_matrix(cm, class_names=class_names,
+                              title='Confusion matrix, without normalization')
     # normalized confusion matrix
-    plot_confusion_matrix(cm
-                          , class_names=class_names
-                          , normalize=True,
-                          title='Normalized confusion matrix')
+    if plot_cm_norm:
+        plot_confusion_matrix(cm
+                              , class_names=class_names
+                              , normalize=True,
+                              title='Normalized confusion matrix')
+    return(cm)
 
 def forest_survey(f_walker, X, y):
 
@@ -194,12 +205,16 @@ def cor_incor_forest_survey(f_walker, X, y):
 
 def run_batches(f_walker, getter,
  data_container, sample_instances, sample_labels,
- batch_size = 1, n_batches = 1, alpha= 0.5):
+ batch_size = 1, n_batches = 1,
+ support_paths=0.1, alpha_paths=0.5,
+ alpha_scores=0.5, which_trees='majority'):
+    sample_rule_accs = [[]] * n_batches
     results = [[]] * (batch_size * n_batches)
-    best_rule = [[]] * (batch_size * n_batches)
     for b in range(n_batches):
-        instances, labels = getter.get_next(batch_size)
 
+        instances, labels = getter.get_next(batch_size)
+        instance_ids = labels.index.tolist()
+        # get all the tree paths instance by instance
         walked = f_walker.forest_walk(instances = instances
                                 , labels = labels)
 
@@ -207,39 +222,112 @@ def run_batches(f_walker, getter,
         walked.flip()
 
         for i in range(batch_size):
-            walked.set_paths(i-1, which_trees='majority')
+
+            # process the path info for freq patt mining
+            walked.set_paths(i-1, which_trees=which_trees)
             walked.discretize_paths(data_container.var_dict)
-            walked.set_patterns()
-            ra = rule_accumulator(data_container=data_container, paths_container=walked)
+            walked.set_patterns(support=support_paths, alpha=alpha_paths)
+
+            # grow a maximal rule from the freq patts
+            ra = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
             ra.profile(sample_instances=sample_instances, sample_labels=sample_labels)
             ra.prune_rule()
 
-            results[b * batch_size + i] = [
-            [p[ra.target_class] for p in ra.pri_and_post], # should be the same as precision below
-            [c[ra.target_class] for c in ra.pri_and_post_coverage],
-            [a[ra.target_class] for a in ra.pri_and_post_accuracy],
-            ra.precision,
-            ra.isolation_pos,
-            len(ra.pruned_rule)]
-
-            _, score1, score2 = ra.score_rule(alpha)
+            # score the rule at each additional term
+            _, score1, score2 = ra.score_rule(alpha=alpha_scores) # not the same as the paths alpha, only affects score one
             adj_max_score1 = np.max(score1[ra.isolation_pos:])
             score1_loc = np.where(np.array(score1 == adj_max_score1))[0][0]
             adj_max_score2 = np.max(score2[ra.isolation_pos:])
             score2_loc = np.where(np.array(score2 == adj_max_score2))[0][0]
 
-            ra_best = rule_accumulator(data_container=data_container, paths_container=walked)
+            # re-run the profile to the best scoring fixed length
+            ra_best = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
             ra_best.profile(sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=score2_loc)
             ra_best.prune_rule()
 
-            best_rule[b * batch_size + i] = [ra_best.pruned_rule, adj_max_score1, adj_max_score2, len(ra_best.pruned_rule)]
+            # collect results
+            results[b * batch_size + i] = [ra_best.lite_instance(), ra.lite_instance()]
+
+        # saving a full rule_accumulator object at the end of each batch, for plotting etc
+        sample_rule_accs[b] = ra
+        # report progress
+        print('done batch ' + str(b))
 
     results_store = open(data_container.pickle_path('results.pickle'), "wb")
     pickle.dump(results, results_store)
     results_store.close()
 
-    best_rule_store = open(data_container.pickle_path('best_rule.pickle'), "wb")
-    pickle.dump(best_rule, best_rule_store)
-    best_rule_store.close()
+    return(sample_rule_accs, results)
 
-    return(ra, results, best_rule)
+def experiment(get_dataset, n_instances, n_batches,
+ support_paths=0.1,
+ alpha_paths=0.5,
+ which_trees='majority'):
+
+    print('LOADING NEW DATA SET.')
+    print()
+    # load a data set
+    mydata = get_dataset()
+
+    # train test split
+    tt = mydata.tt_split()
+
+    ################ PARAMETER TUNING ###################
+    ############ Only runs when required ################
+    #####################################################
+
+    print('Finding best paramaters for Random Forest. Checking for prior tuning paramters.')
+    print()
+    params = tune_rf(tt['X_train_enc'], tt['y_train'],
+     save_path = mydata.pickle_path(),
+     random_state=mydata.random_state)
+
+    #####################################################
+
+    # train a rf model
+    rf, enc_rf = train_rf(X=tt['X_train_enc'], y=tt['y_train'],
+     params=params,
+     encoder=tt['encoder'],
+     random_state=mydata.random_state)
+
+    # fit the forest_walker
+    f_walker = forest_walker(forest = rf,
+     features=mydata.onehot_features,
+     encoder=tt['encoder'],
+     prediction_model=enc_rf)
+
+    # run the batch based forest walker
+    getter = batch_getter(instances=tt['X_test'], labels=tt['y_test'])
+
+    # faster to do one batch, avoids the overhead of setting up many but consumes more mem
+    batch_size = int(min(n_instances, len(tt['y_test'])) / n_batches)
+
+    print('Starting new run at: ' + time.asctime(time.gmtime()) + ' with batch_size = ' + str(batch_size) + ' and n_batches = ' + str(n_batches) + '...(please wait)')
+    start_time = timeit.default_timer()
+
+    # rule_acc is just the last rule rule_accumulator, results are for the whole batch
+    rule_acc, results, best_rule = run_batches(f_walker=f_walker,
+     getter=getter,
+     data_container=mydata,
+     sample_instances=tt['X_train_enc'],
+     sample_labels=tt['y_train'],
+     support_paths=support_paths,
+     alpha_paths=alpha_paths,
+     which_trees=which_trees,
+     batch_size = batch_size,
+     n_batches = n_batches)
+
+    end_time = timeit.default_timer()
+    elapsed_time = end_time - start_time
+    print('Done. Completed run at: ' + time.asctime(time.gmtime()) + '. Elapsed time (seconds) = ' + str(elapsed_time))
+    print()
+
+    print('Results saved at ' + mydata.pickle_path('results.pickle'))
+    print()
+    print('To retrieve results execute the following:')
+    print('results_store = open(\'' + mydata.pickle_path('results.pickle') + '\', "rb")')
+    print('results = pickle.load(results_store)')
+    print('results_store.close()')
+    print()
+    print()
+    return(rule_acc, results)

@@ -7,6 +7,7 @@ from pyfpgrowth import find_frequent_patterns
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 from sklearn.model_selection import train_test_split
 from collections import deque, defaultdict
+from scipy import sparse
 from scipy.stats import sem, entropy
 from operator import itemgetter
 from itertools import chain
@@ -128,7 +129,10 @@ class data_container:
         # one hot encoding required for classifier
         # otherwise integer vectors will be treated as ordinal
         # OneHotEncoder takes an integer list as an argument to state which columns to encode
-        X_train_enc = self.encoder.transform(X_train)
+        if self.encoder is not None:
+            X_train_enc = self.encoder.transform(X_train)
+        else:
+            X_train_enc = sparse.csr_matrix(X_train)
 
         return({
         'X_train': X_train,
@@ -136,7 +140,9 @@ class data_container:
         'X_test' : X_test,
         'y_train' : y_train,
         'y_test' : y_test,
-        'encoder' : self.encoder})
+        'encoder' : self.encoder,
+        'train_priors' : train_priors,
+        'test_priors' : test_priors})
 
     def pretty_rule(self, rule):
         Tr_Fa = lambda x, y, z : x + ' True' if ~y else x + ' False'
@@ -234,8 +240,11 @@ class paths_container:
 
             cont_vars = [vn for vn in var_dict if var_dict[vn]['data_type'] == 'continuous' and var_dict[vn]['class_col'] == False]
             for feature in cont_vars:
+
+            # nan warnings OK, it just means the less than or greater than test was never used
                 # lower bound, greater than
                 lowers = [item[2] for nodes in self.paths for item in nodes if item[0] == feature and item[1] == False]
+
                 # upper bound, less than
                 uppers = [item[2] for nodes in self.paths for item in nodes if item[0] == feature and item[1] == True]
 
@@ -244,11 +253,11 @@ class paths_container:
 
                 # upper_bin_midpoints = pd.Series(upper_bins).rolling(window=2, center=False).mean().values[1:]
                 upper_bin_means = (np.histogram(uppers, upper_bins, weights=uppers)[0] /
-                                    np.histogram(uppers, upper_bins)[0]).round(2)
+                                    np.histogram(uppers, upper_bins)[0]).round(5)
 
                 # lower_bin_midpoints = pd.Series(lower_bins).rolling(window=2, center=False).mean().values[1:]
                 lower_bin_means = (np.histogram(lowers, lower_bins, weights=lowers)[0] /
-                                    np.histogram(lowers, lower_bins)[0]).round(2)
+                                    np.histogram(lowers, lower_bins)[0]).round(5)
 
                 # discretize functions from histogram means
                 upper_discretize = lambda x: upper_bin_means[np.max([np.min([np.digitize(x, upper_bins), len(upper_bin_means)]), 1]) - 1]
@@ -497,23 +506,18 @@ class forest_walker:
         statistics['all_classes'] = self.forest_stats_by_label()
         return(statistics)
 
-    # helper function to encode features prior to sending into forest for path analysis
-    def enc_features(self, instances, feature_encoding):
-        if feature_encoding is None:
-            n_features = instances.shape[1]
-            addendum = "\n"
-        else:
-            instances = feature_encoding.transform(instances)
-            if 'todense' in dir(instances): # it's a sparse matrix
-                instances = instances.todense()
-            n_features = instances.shape[1]
-            addendum = "(after encoding)\n"
-        return(instances, n_features, addendum)
-
     def tree_walk(self, tree, instances, labels = None, features = None):
 
         n_instances = instances.shape[0]
-        instances, n_features, addendum = self.enc_features(instances, self.encoder)
+        # encode features prior to sending into forest for path analysis
+        if self.encoder is None:
+            instances = np.matrix(instances)
+            n_features = instances.shape[1]
+        else:
+            instances = self.encoder.transform(instances)
+            if 'todense' in dir(instances): # it's a sparse matrix
+                instances = instances.todense()
+            n_features = instances.shape[1]
 
         feature = tree.tree_.feature
         threshold = tree.tree_.threshold
@@ -589,10 +593,68 @@ class batch_getter:
         self.current_row += batch_size
         return(instances_out, labels_out)
 
+class rule_acc_lite:
+
+    def __init__(self, instance_id, var_dict,
+                paths, patterns,
+                rule, pruned_rule, conjunction_rule,
+                target_class, major_class,
+                model_votes, model_post,
+                coverage, precision, pri_and_post,
+                pri_and_post_accuracy,
+                pri_and_post_counts,
+                pri_and_post_coverage):
+        self.instance_id = instance_id
+        self.var_dict = var_dict
+        self.paths = paths
+        self.patterns = patterns
+        self.rule = rule
+        self.pruned_rule = pruned_rule
+        self.conjunction_rule = conjunction_rule
+        self.target_class = target_class
+        self.major_class = major_class
+        self.model_votes = model_votes
+        self.model_post = model_post
+        self.coverage = coverage
+        self.precision = precision
+        self.pri_and_post = pri_and_post
+        self.pri_and_post_accuracy = pri_and_post_accuracy
+        self.pri_and_post_counts = pri_and_post_counts
+        self.pri_and_post_coverage = pri_and_post_coverage
+
+    def to_dict(self):
+        return({'instance_id' : self.instance_id,
+        'var_dict' : self.var_dict,
+        'paths' : self.paths,
+        'patterns' : self.patterns,
+        'rule' : self.rule,
+        'pruned_rule' : self.pruned_rule,
+        'conjunction_rule' : self.conjunction_rule,
+        'target_class' :self.target_class,
+        'major_class' : self.major_class,
+        'model_votes' : self.model_votes,
+        'model_post' : self.model_post,
+        'coverage' : self.coverage,
+        'precision' : self.precision,
+        'pri_and_post' : self.pri_and_post,
+        'pri_and_post_accuracy' : self.pri_and_post_accuracy,
+        'pri_and_post_counts' : self.pri_and_post_counts,
+        'pri_and_post_coverage' : self.pri_and_post_coverage})
+
+    def to_dict(self):
+        return([self.instance_id, self.var_dict, self.paths, self.patterns,
+                self.rule, self.pruned_rule, self.conjunction_rule,
+                self.target_class, self.major_class, self.model_votes, self.model_post,
+                self.coverage, self.precision, self.pri_and_post,
+                self.pri_and_post_accuracy,
+                self.pri_and_post_counts,
+                self.pri_and_post_coverage])
+
 class rule_accumulator:
 
-    def __init__(self, data_container, paths_container):
+    def __init__(self, data_container, paths_container, instance_id):
 
+        self.instance_id = instance_id
         self.onehot_features = data_container.onehot_features
         self.onehot_dict = data_container.onehot_dict
         self.var_dict = deepcopy(data_container.var_dict)
@@ -616,7 +678,8 @@ class rule_accumulator:
                 self.var_dict[item]['lower_bound'] = [-math.inf] * n_labs
         self.rule = []
         self.pruned_rule = []
-        self.conj_rule = []
+        self.conjunction_rule = []
+        self.previous_rule = []
         self.total_points = sum([scrs[2] for scrs in self.patterns])
         self.accumulated_points = 0
         self.sample_instances = None
@@ -643,6 +706,7 @@ class rule_accumulator:
         self.stopping_param = None
 
     def add_rule(self, p_total = 0.1):
+        self.previous_rule = self.rule
         next_rule = self.patterns[self.unapplied_rules[0]]
         for item in next_rule[0]:
             if item[0] in self.onehot_dict: # binary feature
@@ -682,7 +746,7 @@ class rule_accumulator:
                         # print(item, 'feature first added')
                         self.rule.append(item)
 
-            # accumlate points from rule
+            # accumlate points from rule and tidy up
             # remove the first item from unapplied_rules as it's just been applied or ignored for being out of range
             self.accumulated_points += self.patterns[0][2]
             del self.unapplied_rules[0]
@@ -749,7 +813,7 @@ class rule_accumulator:
         self.pruned_rule = gt_pruned_rule
 
         # find a rule with only binary True values
-        self.conj_rule = [r for r in self.pruned_rule if ~r[1]]
+        self.conjunction_rule = [r for r in self.pruned_rule if ~r[1]]
 
     def apply_rule(self, rule=None, instances=None):
         if rule is None:
@@ -823,6 +887,10 @@ class rule_accumulator:
             self.add_rule(p_total = self.stopping_param)
             p_counts = p_count(sample_labels.loc[self.apply_rule()].values)
 
+            # code to confirm rule, or revert to previous can go here
+            # choosing from a range of possible metrics and a learning improvement
+            # possible to introduce annealing?
+
             if np.shape(p_counts['p_counts'][np.where(p_counts['labels'] == self.target_class)])[0] <= 0:
                 current_precision = 1.0
             else:
@@ -882,3 +950,13 @@ class rule_accumulator:
         score2 = [s for s in map(score_fun2, target_accuracy, target_cardinality)]
 
         return(target_pca, score1, score2)
+
+    def lite_instance(self):
+        return(rule_acc_lite(self.instance_id, self.var_dict, self.paths,
+        self.patterns, self.rule, self.pruned_rule,
+        self.conjunction_rule, self.target_class, self.major_class,
+        self.model_votes, self.model_post,
+        self.coverage, self.precision, self.pri_and_post,
+        self.pri_and_post_accuracy,
+        self.pri_and_post_counts,
+        self.pri_and_post_coverage))

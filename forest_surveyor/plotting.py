@@ -258,12 +258,12 @@ def plot_coverage_precision(rule_accumulator, class_names):
     plt.show()
 
 # plot the rule trace based on entropy and posteriors
-def plot_rule_scores(rule_accumulator, class_names, alpha=0.5):
+def plot_rule_scores(rule_accumulator, class_names, alpha_scores=0.5):
 
     fig, [ax1, ax2, ax3] = plt.subplots(nrows=3, ncols=1, figsize=(8, 6), dpi=80
                                     , facecolor='w', edgecolor='k')
 
-    pca, score1, score2 = rule_accumulator.score_rule(alpha)
+    pca, score1, score2 = rule_accumulator.score_rule(alpha_scores)
     ax1 = trace_covprecis_plot(ax1, pca, 'Measures wrt Target')
     ax1 = add_maj_match(ax1, rule_accumulator.isolation_pos)
     ax1 = resize_plot(ax1, ['Precision', 'Coverage', 'Accuracy'])
@@ -282,11 +282,11 @@ def plot_rule_scores(rule_accumulator, class_names, alpha=0.5):
     plt.show()
 
 # plot the rule trace based on entropy and posteriors
-def rule_profile_plots(rule_accumulator, class_names, alpha=0.5, ig=True, cp=True, rs=True):
+def rule_profile_plots(rule_accumulator, class_names, alpha_scores=0.5, ig=True, cp=True, rs=True):
 
     if ig:
         plot_ig_dist(rule_accumulator, class_names)
     if cp:
         plot_coverage_precision(rule_accumulator, class_names)
     if rs:
-        plot_rule_scores(rule_accumulator, class_names, alpha)
+        plot_rule_scores(rule_accumulator, class_names, alpha_scores)

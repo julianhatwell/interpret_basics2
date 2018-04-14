@@ -8,21 +8,9 @@ from forest_surveyor.structures import data_container
 # accident
 def accident_data():
 
-    vtypes = {'Location_Easting_OSGR' : np.float64, 'Location_Northing_OSGR' : np.float64,
-       'Longitude' : np.float64, 'Latitude' : np.float64, 'Police_Force' : np.uint8, 'Accident_Severity' : np.uint8,
-       'Number_of_Vehicles' : np.uint8, 'Number_of_Casualties' : np.uint8, 'Date_j' : np.float64, 'Day_of_Week' : np.uint8,
-       'Local_Authority_(District)' : np.uint16, 'Local_Authority_(Highway)' : object,
-       '1st_Road_Class' : np.uint8, '1st_Road_Number' : np.uint16, 'Road_Type' : np.uint8, 'Speed_limit' : np.float16,
-       'Junction_Detail' : np.uint8, 'Junction_Control' : np.uint8, '2nd_Road_Class' : np.uint8,
-       '2nd_Road_Number' : np.uint16, 'Pedestrian_Crossing-Human_Control' : np.uint8,
-       'Pedestrian_Crossing-Physical_Facilities' : np.uint8, 'Light_Conditions' : np.uint8,
-       'Weather_Conditions' : np.uint8, 'Road_Surface_Conditions' : np.uint8,
-       'Special_Conditions_at_Site' : np.uint8, 'Carriageway_Hazards' : np.uint8,
-       'Urban_or_Rural_Area' : np.uint8, 'Did_Police_Officer_Attend_Scene_of_Accident' : np.uint8}
-
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'accident.csv.gz',
-                        compression='gzip', dtype=vtypes),
+                        compression='gzip'),
     class_col = 'Accident_Severity',
     pickle_dir = 'accident_pickles',
     random_state=123,
@@ -46,23 +34,10 @@ def accident_data():
 
 # accident sample: 0.1
 def accident_samp_data():
-    vtypes = {'Accident_Index' : object, 'Location_Easting_OSGR' : np.float64, 'Location_Northing_OSGR' : np.float64,
-       'Longitude' : np.float64, 'Latitude' : np.float64, 'Police_Force' : np.uint8, 'Accident_Severity' : np.uint8,
-       'Number_of_Vehicles' : np.uint8, 'Number_of_Casualties' : np.uint8, 'Date_j' : np.float64, 'Day_of_Week' : np.uint8,
-       'Local_Authority_(District)' : np.uint16, 'Local_Authority_(Highway)' : object,
-       '1st_Road_Class' : np.uint8, '1st_Road_Number' : np.uint16, 'Road_Type' : np.uint8, 'Speed_limit' : np.float16,
-       'Junction_Detail' : np.uint8, 'Junction_Control' : np.uint8, '2nd_Road_Class' : np.uint8,
-       '2nd_Road_Number' : np.uint16, 'Pedestrian_Crossing-Human_Control' : np.uint8,
-       'Pedestrian_Crossing-Physical_Facilities' : np.uint8, 'Light_Conditions' : np.uint8,
-       'Weather_Conditions' : np.uint8, 'Road_Surface_Conditions' : np.uint8,
-       'Special_Conditions_at_Site' : np.uint8, 'Carriageway_Hazards' : np.uint8,
-       'Urban_or_Rural_Area' : np.uint8, 'Did_Police_Officer_Attend_Scene_of_Accident' : np.uint8,
-       'LSOA_of_Accident_Location' : object}
 
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'accident_samp.csv.gz',
-                        compression='gzip',
-                        dtype=vtypes),
+                        compression='gzip'),
     class_col = 'Accident_Severity',
     pickle_dir = 'accident_samp_pickles',
     random_state=123,
@@ -87,23 +62,9 @@ def accident_samp_data():
 # accident small sample: 0.01
 def accident_small_samp_data():
 
-    vtypes = {'Accident_Index' : object, 'Location_Easting_OSGR' : np.float64, 'Location_Northing_OSGR' : np.float64,
-       'Longitude' : np.float64, 'Latitude' : np.float64, 'Police_Force' : np.uint8, 'Accident_Severity' : np.uint8,
-       'Number_of_Vehicles' : np.uint8, 'Number_of_Casualties' : np.uint8, 'Date_j' : np.float64, 'Day_of_Week' : np.uint8,
-       'Local_Authority_(District)' : np.uint16, 'Local_Authority_(Highway)' : object,
-       '1st_Road_Class' : np.uint8, '1st_Road_Number' : np.uint16, 'Road_Type' : np.uint8, 'Speed_limit' : np.float16,
-       'Junction_Detail' : np.uint8, 'Junction_Control' : np.uint8, '2nd_Road_Class' : np.uint8,
-       '2nd_Road_Number' : np.uint16, 'Pedestrian_Crossing-Human_Control' : np.uint8,
-       'Pedestrian_Crossing-Physical_Facilities' : np.uint8, 'Light_Conditions' : np.uint8,
-       'Weather_Conditions' : np.uint8, 'Road_Surface_Conditions' : np.uint8,
-       'Special_Conditions_at_Site' : np.uint8, 'Carriageway_Hazards' : np.uint8,
-       'Urban_or_Rural_Area' : np.uint8, 'Did_Police_Officer_Attend_Scene_of_Accident' : np.uint8,
-       'LSOA_of_Accident_Location' : object}
-
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'accident_small_samp.csv.gz',
-                        compression='gzip',
-                        dtype=vtypes),
+                        compression='gzip'),
     class_col = 'Accident_Severity',
     pickle_dir = 'accident_small_samp_pickles',
     random_state=123,
@@ -189,7 +150,7 @@ def adult_small_samp_data():
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'adult_small_samp.csv.gz',
                         compression='gzip'),
     class_col = 'income',
-    pickle_dir = 'adult_samp_pickles',
+    pickle_dir = 'adult_small_samp_pickles',
     random_state=123,
     spiel = '''
     Data Description:
@@ -383,7 +344,7 @@ def car_data():
                 , 'lug_boot'
                 , 'safety'
                 , 'acceptability'],
-    pickle_dir = 'credit_pickles',
+    pickle_dir = 'car_pickles',
     random_state=123,
     spiel = '''
     M. Bohanec and V. Rajkovic: Knowledge acquisition and explanation for
@@ -595,7 +556,7 @@ def lending_tiny_samp_data():
 # nursery
 def nursery_data():
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'nursery_samp.csv.gz',
+    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'nursery.csv.gz',
                     compression='gzip'),
     class_col = 'decision',
     pickle_dir = 'nursery_pickles',
@@ -620,7 +581,7 @@ def nursery_data():
 # nursery sample: 0.2
 def nursery_samp_data():
     data_cont = data_container(
-    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'nursery.csv.gz',
+    data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'nursery_samp.csv.gz',
                     compression='gzip'),
     class_col = 'decision',
     pickle_dir = 'nursery_samp_pickles',
@@ -701,7 +662,7 @@ def rcdv_samp_data():
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'rcdv_samp.csv.gz',
                     compression='gzip'),
     class_col = 'recid',
-    pickle_dir = 'rcdv_smaple_pickles',
+    pickle_dir = 'rcdv_samp_pickles',
     random_state=123,
     spiel = '''
     Data Set Information:
