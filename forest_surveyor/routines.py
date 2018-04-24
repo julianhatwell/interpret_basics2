@@ -5,13 +5,20 @@ import pickle
 import numpy as np
 import multiprocessing as mp
 from pandas import DataFrame
+from forest_surveyor import p_count, p_count_corrected
 from forest_surveyor.plotting import plot_confusion_matrix
-from forest_surveyor.structures import rule_accumulator, forest_walker, batch_getter
+from forest_surveyor.structures import rule_accumulator, forest_walker, batch_getter, rule_tester
 from forest_surveyor.mp_callable import mp_run_rf
+from scipy.stats import chi2_contingency
+from math import sqrt
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import ParameterGrid
 from sklearn.pipeline import make_pipeline
-from sklearn.metrics import confusion_matrix, cohen_kappa_score
+from sklearn.metrics import confusion_matrix, cohen_kappa_score, precision_recall_fscore_support
+
+import warnings
+
+warnings.filterwarnings(module='sklearn*', action='ignore', category=DeprecationWarning)
 
 def tune_rf_mp(X, y, grid = None, random_state=123, save_path = None):
 
@@ -150,6 +157,7 @@ def evaluate_model(prediction_model, X, y, class_names=None, plot_cm=True, plot_
 
     # view the confusion matrix
     cm = confusion_matrix(y, pred)
+    prfs = precision_recall_fscore_support(y, pred)
     if plot_cm:
         plot_confusion_matrix(cm, class_names=class_names,
                               title='Confusion matrix, without normalization')
@@ -159,7 +167,7 @@ def evaluate_model(prediction_model, X, y, class_names=None, plot_cm=True, plot_
                               , class_names=class_names
                               , normalize=True,
                               title='Normalized confusion matrix')
-    return(cm)
+    return(cm, prfs)
 
 def forest_survey(f_walker, X, y):
 
@@ -207,7 +215,8 @@ def run_batches(f_walker, getter,
  data_container, sample_instances, sample_labels,
  batch_size = 1, n_batches = 1,
  support_paths=0.1, alpha_paths=0.5,
- alpha_scores=0.5, which_trees='majority'):
+ alpha_scores=0.5, which_trees='majority',
+ greedy=None):
     sample_rule_accs = [[]] * n_batches
     results = [[]] * (batch_size * n_batches)
     for b in range(n_batches):
@@ -224,13 +233,28 @@ def run_batches(f_walker, getter,
         for i in range(batch_size):
 
             # process the path info for freq patt mining
-            walked.set_paths(i-1, which_trees=which_trees)
+            walked.set_paths(i, which_trees=which_trees)
             walked.discretize_paths(data_container.var_dict)
-            walked.set_patterns(support=support_paths, alpha=alpha_paths)
+            # the pattens are found but not scored and sorted yet
+            walked.set_patterns(support=support_paths, alpha=alpha_paths, sort=False)
+            # the patterns will be weighted by chi**2 for independence test, p-values
+            weights = [] * len(walked.patterns)
+            for wp in walked.patterns:
+                rt = rule_tester(data_container=data_container,
+                rule=wp,
+                sample_instances=sample_instances)
+                idx = rt.apply_rule()
+                covered = p_count_corrected(sample_labels[idx], [i for i in range(len(data_container.class_names))])['counts']
+                not_covered = p_count_corrected(sample_labels[~idx], [i for i in range(len(data_container.class_names))])['counts']
+                observed = np.array((covered, not_covered))
+                weights.append(sqrt(chi2_contingency(observed=observed, correction=True)[0]))
+
+            # now the patterns are scored and sorted
+            walked.set_patterns(support=support_paths, alpha=alpha_paths, sort=True, weights=weights)
 
             # grow a maximal rule from the freq patts
             ra = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra.profile(sample_instances=sample_instances, sample_labels=sample_labels)
+            ra.profile(sample_instances=sample_instances, sample_labels=sample_labels, greedy=greedy)
             ra.prune_rule()
 
             # score the rule at each additional term
@@ -241,12 +265,48 @@ def run_batches(f_walker, getter,
             score2_loc = np.where(np.array(score2 == adj_max_score2))[0][0]
 
             # re-run the profile to the best scoring fixed length
-            ra_best = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra_best.profile(sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=score2_loc)
-            ra_best.prune_rule()
+            ra_best1 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
+            ra_best1.profile(sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=score1_loc, greedy=greedy)
+            ra_best1.prune_rule()
+            ra_best1_lite = ra_best1.lite_instance()
+            del ra_best1
+
+            ra_best2 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
+            ra_best2.profile(sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=score2_loc, greedy=greedy)
+            ra_best2.prune_rule()
+            ra_best2_lite = ra_best2.lite_instance()
+            del ra_best2
+
+            # re-run the profile to penultimate by instability/misclassification = 0
+            ra_pen = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
+            ra_pen.profile(sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy=greedy)
+            ra_pen.prune_rule()
+            ra_pen_lite = ra_pen.lite_instance()
+            del ra_pen
+
+            # re-run the profile to greedy precis
+            ra_gprec = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
+            ra_gprec.profile(sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='precision')
+            ra_gprec.prune_rule()
+            ra_gprec_lite = ra_gprec.lite_instance()
+            del ra_gprec
+
+            # re-run the profile to greedy plaus
+            ra_gplaus = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
+            ra_gplaus.profile(sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='plausibility')
+            ra_gplaus.prune_rule()
+            ra_gplaus_lite = ra_gplaus.lite_instance()
+            del ra_gplaus
+
+            # re-run the profile to greedy chi2
+            ra_gchi2 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
+            ra_gchi2.profile(sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='chi2')
+            ra_gchi2.prune_rule()
+            ra_gchi2_lite = ra_gchi2.lite_instance()
+            del ra_gchi2
 
             # collect results
-            results[b * batch_size + i] = [ra_best.lite_instance(), ra.lite_instance()]
+            results[b * batch_size + i] = [ra_best1_lite, ra_best2_lite, ra_gprec_lite, ra_gplaus_lite, ra_gchi2_lite, ra_pen_lite, ra.lite_instance()]
 
         # saving a full rule_accumulator object at the end of each batch, for plotting etc
         sample_rule_accs[b] = ra
@@ -257,12 +317,16 @@ def run_batches(f_walker, getter,
     pickle.dump(results, results_store)
     results_store.close()
 
-    return(sample_rule_accs, results)
+    result_sets = ['score_fun1', 'score_fun2', 'greedy_prec', 'greedy_plaus', 'greedy_chisq', 'penultimate', 'exhaustive']
+    return(sample_rule_accs, results, result_sets)
 
 def experiment(get_dataset, n_instances, n_batches,
  support_paths=0.1,
  alpha_paths=0.5,
- which_trees='majority'):
+ alpha_scores=0.5,
+ which_trees='majority',
+ greedy=None,
+ eval_model=False):
 
     print('LOADING NEW DATA SET.')
     print()
@@ -276,7 +340,7 @@ def experiment(get_dataset, n_instances, n_batches,
     ############ Only runs when required ################
     #####################################################
 
-    print('Finding best paramaters for Random Forest. Checking for prior tuning paramters.')
+    print('Finding best parameters for Random Forest. Checking for prior tuning parameters.')
     print()
     params = tune_rf(tt['X_train_enc'], tt['y_train'],
      save_path = mydata.pickle_path(),
@@ -290,9 +354,18 @@ def experiment(get_dataset, n_instances, n_batches,
      encoder=tt['encoder'],
      random_state=mydata.random_state)
 
+    if eval_model:
+        cm, prfs = evaluate_model(prediction_model=enc_rf, X=tt['X_test'], y=tt['y_test'],
+                     class_names=mydata.get_label(mydata.class_col, sorted(tt['y_train'].unique())),
+                     plot_cm=True, plot_cm_norm=True)
+        print('Precision: ' + str(prfs[0].tolist()))
+        print('Recall: ' + str(prfs[1].tolist()))
+        print('F1 Score: ' + str(prfs[2].tolist()))
+        print('Support: ' + str(prfs[3].tolist()))
+
     # fit the forest_walker
     f_walker = forest_walker(forest = rf,
-     features=mydata.onehot_features,
+     data_container=mydata,
      encoder=tt['encoder'],
      prediction_model=enc_rf)
 
@@ -302,17 +375,22 @@ def experiment(get_dataset, n_instances, n_batches,
     # faster to do one batch, avoids the overhead of setting up many but consumes more mem
     batch_size = int(min(n_instances, len(tt['y_test'])) / n_batches)
 
+    print('''NOTE: During run, true divide errors are acceptable.
+    Returned when a tree does not contain any node for either/both upper and lower bounds of a feature.
+
+    ''')
     print('Starting new run at: ' + time.asctime(time.gmtime()) + ' with batch_size = ' + str(batch_size) + ' and n_batches = ' + str(n_batches) + '...(please wait)')
     start_time = timeit.default_timer()
 
     # rule_acc is just the last rule rule_accumulator, results are for the whole batch
-    rule_acc, results, best_rule = run_batches(f_walker=f_walker,
+    rule_acc, results, result_sets = run_batches(f_walker=f_walker,
      getter=getter,
      data_container=mydata,
      sample_instances=tt['X_train_enc'],
      sample_labels=tt['y_train'],
      support_paths=support_paths,
      alpha_paths=alpha_paths,
+     alpha_scores=alpha_scores,
      which_trees=which_trees,
      batch_size = batch_size,
      n_batches = n_batches)
@@ -321,7 +399,54 @@ def experiment(get_dataset, n_instances, n_batches,
     elapsed_time = end_time - start_time
     print('Done. Completed run at: ' + time.asctime(time.gmtime()) + '. Elapsed time (seconds) = ' + str(elapsed_time))
     print()
+    print('Compiling Training Results...(please wait)')
 
+    headers = ['instance_id', 'result_set', 'rule',
+                'pred class', 'pred class label',
+                'target class', 'target class label',
+                'majority vote share', 'pred prior',
+                'precision', 'recall', 'f1',
+                'accuracy', 'plausibility', 'lift',
+                'total coverage']
+    output = [[]] * len(results) * len(result_sets)
+    for i in range(len(results)):
+        # these are the same for a whole result set
+        instance_id = results[i][0].instance_id
+        mc = results[i][0].major_class
+        mc_lab = results[i][0].major_class_label
+        tc = results[i][0].target_class
+        tc_lab = results[i][0].target_class_label
+        mvs = results[i][0].model_post[tc]
+        prior = results[i][0].pri_and_post[0][tc]
+        for j, rs in enumerate(result_sets):
+            rule = mydata.pretty_rule(results[i][j].pruned_rule)
+            prec = list(reversed(results[i][j].pri_and_post))[0][tc]
+            recall = list(reversed(results[i][j].pri_and_post_recall))[0][tc]
+            f1 = list(reversed(results[i][j].pri_and_post_f1))[0][tc]
+            acc = list(reversed(results[i][j].pri_and_post_accuracy))[0][tc]
+            plaus = list(reversed(results[i][j].pri_and_post_plausibility))[0][tc]
+            lift = list(reversed(results[i][j].pri_and_post_lift))[0][tc]
+            coverage = list(reversed(results[i][j].coverage))[0]
+
+            output[j * len(results) + i] = [instance_id,
+                    rs,
+                    rule,
+                    mc,
+                    mc_lab,
+                    tc,
+                    tc_lab,
+                    mvs,
+                    prior,
+                    prec,
+                    recall,
+                    f1,
+                    acc,
+                    plaus,
+                    lift,
+                    coverage]
+
+    output_df = DataFrame(output, columns=headers)
+    output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '.csv'))
     print('Results saved at ' + mydata.pickle_path('results.pickle'))
     print()
     print('To retrieve results execute the following:')
@@ -330,4 +455,36 @@ def experiment(get_dataset, n_instances, n_batches,
     print('results_store.close()')
     print()
     print()
-    return(rule_acc, results)
+    return(rule_acc, results, output_df)
+
+
+# print to screen (controlled by input parameter) will show full results, not just major class
+# output_results=False
+# oprint = lambda x : print(x) if output_results else None
+
+# oprint('instance_id')
+# oprint(results[i][0].instance_id)
+# oprint('rule')
+# oprint(mydata.pretty_rule(results[i][0].pruned_rule))
+# oprint('majority (predicted) class')
+# oprint(results[i][0].major_class)
+# oprint('model vote split')
+# oprint(results[i][0].model_post)
+# oprint('priors')
+# oprint(results[i][0].pri_and_post[0])
+# # prec = list(reversed(results[i][0].pri_and_post))[0]
+# oprint('precision by class')
+# oprint(prec)
+#
+# oprint('coverage by class')
+# oprint(coverage)
+#
+# oprint('plausibility')
+# oprint((prec * coverage)/results[i][0].pri_and_post[0])
+#
+# oprint('accuracy')
+# oprint(list(reversed(results[i][0].pri_and_post_accuracy))[0])
+#
+# oprint('total rule coverage')
+# oprint(p_counts['counts'].sum()/len(tt['y_train']))
+# oprint('')

@@ -196,7 +196,7 @@ def trace_covprecis_plot(ax, measures, measure):
 
 def plot_ig_dist(rule_accumulator, class_names):
 
-    fig, [ax1, ax2, ax3] = plt.subplots(nrows=3, ncols=1, figsize=(8, 6), dpi=80
+    fig, [ax1, ax2, ax3, ax4] = plt.subplots(nrows=4, ncols=1, figsize=(8, 8), dpi=80
                                     , facecolor='w', edgecolor='k')
 
     ax1.plot(rule_accumulator.cum_info_gain)
@@ -227,9 +227,16 @@ def plot_ig_dist(rule_accumulator, class_names):
     ax3.set_title('Number of instances')
     ax3.set_ylabel('log(counts)')
 
+    ax4.plot(np.log(rule_accumulator.pri_and_post_lift + 1))
+    ax4.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax4 = add_maj_match(ax4, rule_accumulator.isolation_pos)
+    ax4.set_title('Lift wrt Class')
+    ax4.set_ylabel('log(lift)')
+
     ax1 = resize_plot(ax1, class_names, set_legend=False)
     ax2 = resize_plot(ax2, class_names)
     ax3 = resize_plot(ax3, class_names)
+    ax4 = resize_plot(ax4, class_names)
 
     fig.suptitle('Rule trace through scoring sample', fontsize=12)
     fig.tight_layout(rect=[0, 0.0, 1, 0.95])
@@ -238,12 +245,12 @@ def plot_ig_dist(rule_accumulator, class_names):
 
 def plot_coverage_precision(rule_accumulator, class_names):
     # plot the rule trace based on coverage and precision
-    fig, [ax1, ax2, ax3] = plt.subplots(nrows=3, ncols=1, figsize=(8, 6), dpi=80
+    fig, [ax1, ax2, ax3, ax4, ax5] = plt.subplots(nrows=5, ncols=1, figsize=(8, 10), dpi=80
                                     , facecolor='w', edgecolor='k')
 
     ax1 = trace_covprecis_plot(ax1, rule_accumulator.coverage, 'Coverage')
     ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
-    ax2 = trace_covprecis_plot(ax2, rule_accumulator.pri_and_post_coverage, 'Coverage wrt Class')
+    ax2 = trace_covprecis_plot(ax2, rule_accumulator.pri_and_post_recall, 'Coverage wrt Class (Recall)')
     ax2.xaxis.set_major_locator(MaxNLocator(integer=True))
     ax2 = add_maj_match(ax2, rule_accumulator.isolation_pos)
     ax2 = resize_plot(ax2, class_names)
@@ -251,6 +258,14 @@ def plot_coverage_precision(rule_accumulator, class_names):
     ax3.xaxis.set_major_locator(MaxNLocator(integer=True))
     ax3 = add_maj_match(ax3, rule_accumulator.isolation_pos)
     ax3 = resize_plot(ax3, class_names)
+    ax4 = trace_covprecis_plot(ax4, rule_accumulator.pri_and_post_plausibility, 'Plausibility wrt Class')
+    ax4.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax4 = add_maj_match(ax4, rule_accumulator.isolation_pos)
+    ax4 = resize_plot(ax4, class_names)
+    ax5 = trace_covprecis_plot(ax5, rule_accumulator.pri_and_post_f1, 'F1 wrt Class')
+    ax5.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax5 = add_maj_match(ax5, rule_accumulator.isolation_pos)
+    ax5 = resize_plot(ax5, class_names)
 
     fig.suptitle('Rule trace through scoring sample', fontsize=12)
     fig.tight_layout(rect=[0, 0.0, 1, 0.95])
@@ -263,10 +278,10 @@ def plot_rule_scores(rule_accumulator, class_names, alpha_scores=0.5):
     fig, [ax1, ax2, ax3] = plt.subplots(nrows=3, ncols=1, figsize=(8, 6), dpi=80
                                     , facecolor='w', edgecolor='k')
 
-    pca, score1, score2 = rule_accumulator.score_rule(alpha_scores)
-    ax1 = trace_covprecis_plot(ax1, pca, 'Measures wrt Target')
+    prf, score1, score2 = rule_accumulator.score_rule(alpha_scores)
+    ax1 = trace_covprecis_plot(ax1, prf, 'Measures wrt Target')
     ax1 = add_maj_match(ax1, rule_accumulator.isolation_pos)
-    ax1 = resize_plot(ax1, ['Precision', 'Coverage', 'Accuracy'])
+    ax1 = resize_plot(ax1, ['Precision', 'Recall', 'F1', 'Accuracy', 'Plausibility'])
 
     ax2 = trace_covprecis_plot(ax2, score1, 'Score Function 1')
     ax2 = add_maj_match(ax2, rule_accumulator.isolation_pos)

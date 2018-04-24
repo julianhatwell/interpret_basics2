@@ -1,7 +1,7 @@
 import sys
 import math
 import numpy as np
-from forest_surveyor import p_count
+from forest_surveyor import p_count, p_count_corrected
 from pandas import DataFrame, Series
 from pyfpgrowth import find_frequent_patterns
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
@@ -12,6 +12,7 @@ from scipy.stats import sem, entropy
 from operator import itemgetter
 from itertools import chain
 from copy import deepcopy
+from scipy.stats import chi2_contingency
 from forest_surveyor import config as cfg
 
 class data_container:
@@ -277,33 +278,20 @@ class paths_container:
                 # at the end of each loop, update the instance variable
                 self.paths = paths_discretized
 
-    def sort_fp(self, alpha=0.0):
-        # alpha can be any number, but best results -1 < alpha < 1
-        # negative numbers will favour shorter fp
-        # positive numbers will favour longer fp
-        alpha = float(alpha)
-        fp_scope = freq_patts.copy()
-        # to shrink the support of shorter freq_patterns
-        # formula is log(sup * (len - alpha) / len)
-        score_function = lambda x: (x[0], x[1], math.log(x[1]) * (len(x[0]) - alpha) / len(x[0]))
-        fp_scope = [fp for fp in map(score_function, fp_scope.items())]
-
-        # score is now at position 2 of tuple
-        return(sorted(fp_scope, key=itemgetter(2), reverse = True))
-
-    def set_patterns(self, support=0.1, alpha=0.0, sort=True):
-
+    def set_patterns(self, support=0.1, alpha=0.0, sort=True, weights=None):
         # convert to an absolute number of instances rather than a fraction
         if support < 1:
             support = round(support * len(self.paths))
         self.patterns = find_frequent_patterns(self.paths, support)
         if sort:
             alpha = float(alpha)
+            if weights is None:
+                weights = [1] * len(self.patterns)
             fp_scope = self.patterns.copy()
             # to shrink the support of shorter freq_patterns
             # formula is log(sup * (len - alpha) / len)
-            score_function = lambda x: (x[0], x[1], math.log(x[1]) * (len(x[0]) - alpha) / len(x[0]))
-            fp_scope = [fp for fp in map(score_function, fp_scope.items())]
+            score_function = lambda x, w: (x[0], x[1], w * math.log(x[1]) * (len(x[0]) - alpha) / len(x[0]))
+            fp_scope = [fp for fp in map(score_function, fp_scope.items(), weights)]
             # score is now at position 2 of tuple
             self.patterns = sorted(fp_scope, key=itemgetter(2), reverse = True)
 
@@ -311,17 +299,23 @@ class forest_walker:
 
     def __init__(self
     , forest
-    , features
+    , data_container
     , encoder = None
     , prediction_model = None):
         self.forest = forest
+        self.features = data_container.onehot_features
+        self.n_features = len(self.features)
+        if data_container.class_col in data_container.le_dict.keys():
+            self.class_names = data_container.get_label(data_container.class_col, [i for i in range(len(data_container.class_names))])
+            self.get_label = data_container.get_label
+            self.class_col = data_container.class_col
+        else:
+            self.class_names = data_container.class_names
+            self.get_label = None
         self.encoder = encoder
         if prediction_model is None:
             self.prediction_model = forest
         else: self.prediction_model = prediction_model
-
-        self.features = features
-        self.n_features = len(self.features)
 
         # base counts for all trees
         self.root_features = np.zeros(len(self.features)) # set up a 1d feature array to count features appearing as root nodes
@@ -509,7 +503,8 @@ class forest_walker:
     def tree_walk(self, tree, instances, labels = None, features = None):
 
         n_instances = instances.shape[0]
-        # encode features prior to sending into forest for path analysis
+        instance_ids = instances.index.tolist()
+        # encode features prior to sending into tree for path analysis
         if self.encoder is None:
             instances = np.matrix(instances)
             n_features = instances.shape[1]
@@ -519,9 +514,15 @@ class forest_walker:
                 instances = instances.todense()
             n_features = instances.shape[1]
 
+        # structural objects from tree
         feature = tree.tree_.feature
         threshold = tree.tree_.threshold
+        # predictions from tree
         tree_pred = tree.predict(instances)
+        if self.get_label is not None:
+            tree_pred_labels = self.get_label(self.class_col, tree_pred.astype(int))
+        else:
+            tree_pred_labels = tree_pred
         tree_pred_proba = tree.predict_proba(instances)
 
         if labels is None:
@@ -537,19 +538,22 @@ class forest_walker:
             p = path_deque.popleft()
             if feature[p] < 0: # leaf node
                 continue
-            feature_value = instances[ic, [feature[p]]].item(0)
-            leq_threshold = feature_value <= threshold[p]
+            pass_test = True
             if features is None:
                 feature_name = None
             else:
                 feature_name = features[feature[p]]
             if p == 0: # root node
                 ic += 1
+                feature_value = instances[ic, [feature[p]]].item(0)
+                leq_threshold = feature_value <= threshold[p]
                 if labels is None:
                     true_class = None
                 else:
                     true_class = labels.values[ic]
-                instance_paths[ic] = { 'pred_class' : tree_pred[ic].astype(np.int64)
+                instance_paths[ic] = {'instance_id' : instance_ids[ic]
+                                        , 'pred_class' : tree_pred[ic].astype(np.int64)
+                                        , 'pred_class_label' : tree_pred_labels[ic]
                                         , 'pred_proba' : tree_pred_proba[ic].tolist()
                                         , 'true_class' : true_class
                                         , 'tree_correct' : tree_correct[ic]
@@ -561,6 +565,8 @@ class forest_walker:
                                                     }
                                         }
             else:
+                feature_value = instances[ic, [feature[p]]].item(0)
+                leq_threshold = feature_value <= threshold[p]
                 instance_paths[ic]['path']['feature_idx'].append(feature[p])
                 instance_paths[ic]['path']['feature_name'].append(feature_name)
                 instance_paths[ic]['path']['feature_value'].append(feature_value)
@@ -598,12 +604,16 @@ class rule_acc_lite:
     def __init__(self, instance_id, var_dict,
                 paths, patterns,
                 rule, pruned_rule, conjunction_rule,
-                target_class, major_class,
+                target_class, target_class_label,
+                major_class, major_class_label,
                 model_votes, model_post,
                 coverage, precision, pri_and_post,
                 pri_and_post_accuracy,
                 pri_and_post_counts,
-                pri_and_post_coverage):
+                pri_and_post_recall,
+                pri_and_post_f1,
+                pri_and_post_plausibility,
+                pri_and_post_lift):
         self.instance_id = instance_id
         self.var_dict = var_dict
         self.paths = paths
@@ -612,7 +622,9 @@ class rule_acc_lite:
         self.pruned_rule = pruned_rule
         self.conjunction_rule = conjunction_rule
         self.target_class = target_class
+        self.target_class_label = target_class_label
         self.major_class = major_class
+        self.major_class_label = major_class_label
         self.model_votes = model_votes
         self.model_post = model_post
         self.coverage = coverage
@@ -620,7 +632,10 @@ class rule_acc_lite:
         self.pri_and_post = pri_and_post
         self.pri_and_post_accuracy = pri_and_post_accuracy
         self.pri_and_post_counts = pri_and_post_counts
-        self.pri_and_post_coverage = pri_and_post_coverage
+        self.pri_and_post_recall = pri_and_post_recall
+        self.pri_and_post_f1 = pri_and_post_f1
+        self.pri_and_post_plausibility = pri_and_post_plausibility
+        self.pri_and_post_lift = pri_and_post_lift
 
     def to_dict(self):
         return({'instance_id' : self.instance_id,
@@ -631,7 +646,9 @@ class rule_acc_lite:
         'pruned_rule' : self.pruned_rule,
         'conjunction_rule' : self.conjunction_rule,
         'target_class' :self.target_class,
+        'target_class_label' :self.target_class_label,
         'major_class' : self.major_class,
+        'major_class_label' :self.major_class_label,
         'model_votes' : self.model_votes,
         'model_post' : self.model_post,
         'coverage' : self.coverage,
@@ -639,30 +656,109 @@ class rule_acc_lite:
         'pri_and_post' : self.pri_and_post,
         'pri_and_post_accuracy' : self.pri_and_post_accuracy,
         'pri_and_post_counts' : self.pri_and_post_counts,
-        'pri_and_post_coverage' : self.pri_and_post_coverage})
+        'pri_and_post_recall' : self.pri_and_post_recall,
+        'pri_and_post_f1' : self.pri_and_post_f1,
+        'pri_and_post_plausibility' : self.pri_and_post_plausibility,
+        'pri_and_post_lift' : self.pri_and_post_lift})
 
     def to_dict(self):
         return([self.instance_id, self.var_dict, self.paths, self.patterns,
                 self.rule, self.pruned_rule, self.conjunction_rule,
-                self.target_class, self.major_class, self.model_votes, self.model_post,
+                self.target_class, self.target_class_label,
+                self.major_class, self.major_class_label,
+                self.model_votes, self.model_post,
                 self.coverage, self.precision, self.pri_and_post,
                 self.pri_and_post_accuracy,
                 self.pri_and_post_counts,
-                self.pri_and_post_coverage])
+                self.pri_and_post_recall,
+                self.pri_and_post_f1,
+                self.pri_and_post_plausibility,
+                self.pri_and_post_lift])
+
+class rule_tester:
+
+    def __init__(self, data_container, rule, sample_instances, sample_labels=None):
+        self.onehot_features = data_container.onehot_features
+        self.class_names = data_container.class_names
+        self.rule = rule
+        self.sample_instances = sample_instances
+        self.sample_labels = sample_labels
+
+    def apply_rule(self, rule=None, instances=None):
+        if rule is None:
+            rule = self.rule
+        if instances is None:
+            instances = self.sample_instances
+        lt_gt = lambda x, y, z : x < y if z else x > y # if z is True, x < y else x > y
+        idx = np.full(instances.shape[0], 1, dtype='bool')
+        for r in rule:
+            idx = np.logical_and(idx, lt_gt(instances.getcol(self.onehot_features.index(r[0])).toarray().flatten(), r[2], r[1]))
+        return(idx)
+
+    # leave one out by instance_id and encode the rest
+    def loo_encode(self, instance_id, sample_instances, sample_labels, encoder=None):
+        instances = sample_instances.drop(instance_id)
+        labels = sample_labels.drop(instance_id)
+        if encoder is None:
+            enc_instances = sparse.csr_matrix(instances)
+        else:
+            enc_instances = encoder.transform(instances)
+        return(instances, enc_instances, labels)
+
+    def evaluate_rule(data_container=None,
+                    rule=None, instances=None,
+                    labels=None, encoder=None,
+                    class_names=None):
+        if rule is None:
+            rule = self.rule
+        if instances is None:
+            instances = self.sample_instances
+        if labels is None:
+            labels = self.sample_labels
+        if labels is None:
+            print('Test labels are required for rule evaluation')
+            return()
+        if class_names is None:
+            class_names = self.class_names
+
+        test_instances, test_instances_enc, test_labels = self.loo_encode(instance_id, instances, labels, encoder)
+
+        idx = rt.apply_rule()
+        cover = idx.sum()/len(idx) # tp + fp / tp + fp + tn + fn
+
+        test_instance_label = labels.loc[instance_id]
+        tp = test_labels.iloc[idx] == test_instance_label # true positives
+        precis = tp.sum()/idx.sum() # tp / tp + fp where idx.sum() = tp + fp, idx being all covered by rule
+
+        idy = test_labels == test_instance_label # all positives
+        recall = tp.sum()/idy.sum() # tp / tp + fn where idy.sum() = tp + fn, idy being all where label = instance label
+
+        f1 = 2 * ( ( precis * recall ) / ( precis + recall ) )
+
+        plaus = (np.array([precis, 1 - precis]) * np.array([cover, cover])) / np.array([(idy.sum()/len(idx)), 1 - (idy.sum()/len(idx))])
+        plaus /= plaus.sum()
 
 class rule_accumulator:
 
     def __init__(self, data_container, paths_container, instance_id):
 
         self.instance_id = instance_id
+        self.class_col = data_container.class_col
+        if data_container.class_col in data_container.le_dict.keys():
+            self.class_names = data_container.get_label(data_container.class_col, [i for i in range(len(data_container.class_names))])
+            self.get_label = data_container.get_label
+        else:
+            self.class_names = data_container.class_names
+            self.get_label = None
+
         self.onehot_features = data_container.onehot_features
         self.onehot_dict = data_container.onehot_dict
         self.var_dict = deepcopy(data_container.var_dict)
         self.paths = paths_container.paths
         if paths_container.by_tree:
-            self.model_votes = p_count([paths_container.path_detail[t][paths_container.instance]['pred_class'] for t in range(len(paths_container.paths))])
+            self.model_votes = p_count_corrected([paths_container.path_detail[t][paths_container.instance]['pred_class_label'] for t in range(len(paths_container.paths))], data_container.class_names)
         else:
-            self.model_votes = p_count([paths_container.path_detail[paths_container.instance][t]['pred_class'] for t in range(len(paths_container.paths))])
+            self.model_votes = p_count_corrected([paths_container.path_detail[paths_container.instance][t]['pred_class_label'] for t in range(len(paths_container.paths))], data_container.class_names)
         self.patterns = paths_container.patterns
         self.unapplied_rules = [i for i in range(len(self.patterns))]
 
@@ -680,6 +776,7 @@ class rule_accumulator:
         self.pruned_rule = []
         self.conjunction_rule = []
         self.previous_rule = []
+        self.reverted = []
         self.total_points = sum([scrs[2] for scrs in self.patterns])
         self.accumulated_points = 0
         self.sample_instances = None
@@ -687,6 +784,7 @@ class rule_accumulator:
         self.n_instances = None
         self.n_classes = None
         self.target_class = None
+        self.target_class_label = None
         self.major_class = None
         self.model_entropy = None
         self.model_info_gain = None
@@ -701,14 +799,20 @@ class rule_accumulator:
         self.pri_and_post = None
         self.pri_and_post_accuracy = None
         self.pri_and_post_counts = None
-        self.pri_and_post_coverage = None
+        self.pri_and_post_recall = None
+        self.pri_and_post_f1 = None
+        self.pri_and_post_plausibility = None
+        self.pri_and_post_lift = None
         self.isolation_pos = None
         self.stopping_param = None
+        self.profile_iter = None
 
     def add_rule(self, p_total = 0.1):
-        self.previous_rule = self.rule
+        self.previous_rule = deepcopy(self.rule)
         next_rule = self.patterns[self.unapplied_rules[0]]
         for item in next_rule[0]:
+            if item in self.rule:
+                continue # skip duplicates (essential for pruning reasons)
             if item[0] in self.onehot_dict: # binary feature
                 # update the master list
                 position = self.var_dict[self.onehot_dict[item[0]]]['onehot_labels'].index(item[0])
@@ -826,10 +930,20 @@ class rule_accumulator:
             idx = np.logical_and(idx, lt_gt(instances.getcol(self.onehot_features.index(r[0])).toarray().flatten(), r[2], r[1]))
         return(idx)
 
+    def __greedy_commit__(self, current, previous):
+        if current <= previous:
+            self.rule = deepcopy(self.previous_rule)
+            self.reverted.append(True)
+            return(True)
+        else:
+            self.reverted.append(False)
+            return(False)
+
     def profile(self, sample_instances, sample_labels
                         , stopping_param = 1
                         , fixed_length = None
-                        , target_class=None):
+                        , target_class=None
+                        , greedy=None):
 
         # basic setup
         if stopping_param > 1 or stopping_param < 0:
@@ -841,27 +955,41 @@ class rule_accumulator:
         self.n_classes = len(np.unique(self.sample_labels))
         self.n_instances = len(self.sample_labels)
 
-        # model posterior - model votes collected in constructor
-        self.major_class = np.argmax(self.model_votes['p_counts'])
-        self.model_post = np.empty(self.n_classes)
-        for cn in range(self.n_classes):
-            if cn in self.model_votes['labels']:
-                self.model_post[cn] = self.model_votes['p_counts'][np.where(self.model_votes['labels'] == cn)][0]
-            else:
-                self.model_post[cn] = 0.0
+        # model posterior
+        # model votes collected in constructor
+        self.model_post = self.model_votes['p_counts']
 
         # model final entropy
         self.model_entropy = entropy(self.model_post)
 
-        if target_class is None: target_class = self.major_class
-        self.target_class = target_class
+        # model predicted class
+        self.major_class = np.argmax(self.model_votes['p_counts'])
+        if self.get_label is None:
+            self.major_class_label = self.major_class
+        else:
+            self.major_class_label = self.get_label(self.class_col, self.major_class)
+
+        # this analysis
+        # target class
+        if target_class is None:
+            self.target_class = self.major_class
+            self.target_class_label = self.major_class_label
+        else:
+            self.target_class = target_class
+            if self.get_label is None:
+                self.target_class_label = self.target_class
+            else:
+                self.target_class_label = self.get_label(self.class_col, self.target_class)
 
         # prior
-        p_counts = p_count(sample_labels.values)
-        self.pri_and_post = [p_counts['p_counts'].tolist()]
-        self.pri_and_post_counts = [p_counts['counts'].tolist()]
-        self.pri_and_post_coverage = [np.full(self.n_classes, 1.0)]
-        self.pri_and_post_accuracy = [p_counts['p_counts'].tolist()]
+        p_counts = p_count_corrected(sample_labels.values, [i for i in range(len(self.class_names))])
+        self.pri_and_post = np.array([p_counts['p_counts'].tolist()])
+        self.pri_and_post_counts = np.array([p_counts['counts'].tolist()])
+        self.pri_and_post_recall = [np.full(self.n_classes, 1.0)] # counts / prior counts
+        self.pri_and_post_f1 =  [2] * ( ( self.pri_and_post * self.pri_and_post_recall ) / ( self.pri_and_post + self.pri_and_post_recall ) ) # 2 * (precis * recall/(precis + recall) )
+        self.pri_and_post_accuracy = np.array([p_counts['p_counts'].tolist()])
+        self.pri_and_post_plausibility = np.array([p_counts['p_counts'].tolist()]) # precis * cover / priors. Starts of same as prior
+        self.pri_and_post_lift = [np.full(self.n_classes, 1.0)] # precis / (total_cover * prior)
         self.prior_entropy = entropy(self.pri_and_post_counts[0])
 
         # info gain
@@ -872,7 +1000,8 @@ class rule_accumulator:
         # pre-loop set up
         # rule based measures - prior/empty rule
         current_precision = p_counts['p_counts'][np.where(p_counts['labels'] == self.target_class)][0] # based on priors
-        self.coverage = [1]
+
+        self.coverage = [1.0]
         self.precision = [current_precision]
 
         # rule posteriors
@@ -883,52 +1012,88 @@ class rule_accumulator:
 
         # accumulate rule terms
         cum_points = 0
-        while current_precision != 1.0 and self.accumulated_points <= self.total_points * self.stopping_param and (fixed_length is None or len(self.cum_info_gain) < fixed_length + 1):
+        self.profile_iter = 0
+
+        while current_precision != 1.0 and current_precision != 0.0 and self.accumulated_points <= self.total_points * self.stopping_param and (fixed_length is None or len(self.cum_info_gain) < max(1, fixed_length) + 1):
+            self.profile_iter += 1
             self.add_rule(p_total = self.stopping_param)
-            p_counts = p_count(sample_labels.loc[self.apply_rule()].values)
-
-            # code to confirm rule, or revert to previous can go here
-            # choosing from a range of possible metrics and a learning improvement
-            # possible to introduce annealing?
-
-            if np.shape(p_counts['p_counts'][np.where(p_counts['labels'] == self.target_class)])[0] <= 0:
-                current_precision = 1.0
-            else:
-                current_precision = p_counts['p_counts'][np.where(p_counts['labels'] == self.target_class)][0] # based on priors
-
-            # general coverage and precision
-            self.precision.append(current_precision)
+            p_counts = p_count_corrected(sample_labels.loc[self.apply_rule()].values, [i for i in range(len(self.class_names))])
+            # calculate everything before committing the rule
             n_coverage = sum(p_counts['counts'])
-            self.coverage.append(n_coverage/self.n_instances)
+            post = p_counts['p_counts']
+            counts = p_counts['counts']
 
-            # posterior distributions and counts
-            post = np.empty(self.n_classes)
-            counts = np.empty(self.n_classes)
-            not_covered_counts = np.empty(self.n_classes)
-            # per class (not all classes are represented and this needs to be tested each iteration)
-            for cn in range(self.n_classes):
-                if cn in p_counts['labels']:
-                    post[cn] = p_counts['p_counts'][np.where(p_counts['labels'] == cn)][0]
-                    counts[cn] = p_counts['counts'][np.where(p_counts['labels'] == cn)][0]
-                    not_covered_counts[cn] = counts[cn] + (np.sum(self.pri_and_post_counts[0]) - self.pri_and_post_counts[0][cn]) - (np.sum(p_counts['counts']) - counts[cn])
-                else:
-                    post[cn] = 0.0
-                    counts[cn] = 0.0
-                    not_covered_counts[cn] = 0.0
+            # class coverage, TPR (recall) TP / (TP + FN)
+            recall = p_counts['counts'] / self.pri_and_post_counts[0]
+            f1 =  [2] * ((post * recall) / (post + recall))
+            not_covered_counts = counts + (np.sum(self.pri_and_post_counts[0]) - self.pri_and_post_counts[0]) - (np.sum(p_counts['counts']) - counts)
 
-            # class coverage, TPR
-            # accuracy (TP + TN) / num_instances formula: https://books.google.co.uk/books?id=ubzZDQAAQBAJ&pg=PR75&lpg=PR75&dq=rule+precision+and+coverage&source=bl&ots=Aa4Gj7fh5g&sig=6OsF3y4Kyk9KlN08OPQfkZCuZOc&hl=en&sa=X&ved=0ahUKEwjM06aW2brZAhWCIsAKHY5sA4kQ6AEIUjAE#v=onepage&q=rule%20precision%20and%20coverage&f=false
-            self.pri_and_post_coverage.append(counts/self.pri_and_post_counts[0])
-            self.pri_and_post_accuracy.append(not_covered_counts/self.n_instances)
+            # accuracy = (TP + TN) / num_instances formula: https://books.google.co.uk/books?id=ubzZDQAAQBAJ&pg=PR75&lpg=PR75&dq=rule+precision+and+coverage&source=bl&ots=Aa4Gj7fh5g&sig=6OsF3y4Kyk9KlN08OPQfkZCuZOc&hl=en&sa=X&ved=0ahUKEwjM06aW2brZAhWCIsAKHY5sA4kQ6AEIUjAE#v=onepage&q=rule%20precision%20and%20coverage&f=false
+            accu = not_covered_counts/self.n_instances
 
-            # append the results to the array
+            # plausibility normalize(precis * cover / priors)
+            plaus = ( post * ( counts / n_coverage ) ) / self.pri_and_post[0]
+            plaus = plaus / np.sum(plaus)
+
+            # lift = precis / (total_cover * prior)
+            lift = post / ( ( [np.sum(counts)] / np.sum(self.pri_and_post_counts[0]) ) * self.pri_and_post[0] )
+
+            # entropy / information
             previous_entropy = current_entropy
             current_entropy = entropy(post)
-            self.information_gain.append(previous_entropy - current_entropy)
-            self.cum_info_gain.append(sum(self.information_gain))
+
+            # code to confirm rule, or revert to previous
+            # choosing from a range of possible metrics and learning improvement
+            # possible to introduce annealing?
+
+            # e.g if there was no change, or an decrease in precis
+            if greedy is not None:
+                if greedy == 'precision':
+                    current = post[np.where(p_counts['labels'] == self.target_class)]
+                    previous = list(reversed(self.pri_and_post))[0][np.where(p_counts['labels'] == self.target_class)]
+                    should_continue = self.__greedy_commit__(current, previous)
+                elif greedy == 'plausibility':
+                    current = plaus[np.where(p_counts['labels'] == self.target_class)]
+                    previous = list(reversed(self.pri_and_post_plausibility))[0][np.where(p_counts['labels'] == self.target_class)]
+                    should_continue = self.__greedy_commit__(current, previous)
+                elif greedy == 'chi2':
+                    previous_counts = p_count_corrected(sample_labels.loc[self.apply_rule(self.previous_rule)].values, [i for i in range(len(self.class_names))])['counts']
+                    observed = np.array((counts, previous_counts))
+                    if counts.sum() == 0: # previous_counts.sum() == 0 is impossible
+                        should_continue = self.__greedy_commit__(1, 0) # go ahead with rule as the algorithm will finish here
+                    else: # do the chi square test but mask any classes where prev and current are zero
+                        should_continue = self.__greedy_commit__(0.05, chi2_contingency(observed=observed[:, np.where(observed.sum(axis=0) != 0)], correction=True)[1])
+                # add more options here
+                else: should_continue = False
+                if should_continue:
+                    continue # don't update all the metrics, just go to the next round
+
+            # check for end conditions; no target class coverage
+            if p_counts['p_counts'][np.where(p_counts['labels'] == self.target_class)] == 0.0:
+                current_precision = 0.0
+            else:
+                current_precision = p_counts['p_counts'][np.where(p_counts['labels'] == self.target_class)][0]
+
+            # if we keep the new rule, append the results to the persisted arrays
+            # general coverage and precision
+            self.precision.append(current_precision)
+            self.coverage.append(n_coverage/self.n_instances)
+
+            # per class measures
             self.pri_and_post = np.append(self.pri_and_post, [post], axis=0)
             self.pri_and_post_counts = np.append(self.pri_and_post_counts, [counts], axis=0)
+            self.pri_and_post_accuracy = np.append(self.pri_and_post_accuracy, [accu], axis=0)
+            self.pri_and_post_recall = np.append(self.pri_and_post_recall, [recall], axis=0 )
+            self.pri_and_post_f1 = np.append(self.pri_and_post_f1, [f1], axis=0 )
+            self.pri_and_post_plausibility = np.append(self.pri_and_post_plausibility, [plaus], axis=0 )
+            self.pri_and_post_lift = np.append(self.pri_and_post_lift, [lift], axis=0 )
 
+            # entropy and info gain
+            self.information_gain.append(previous_entropy - current_entropy)
+            self.cum_info_gain.append(sum(self.information_gain))
+
+        # tidy up F1 score undefineds
+        self.pri_and_post_f1 = np.nan_to_num(self.pri_and_post_f1, copy = False)
         # first time major_class is isolated
         if any(np.argmax(self.pri_and_post, axis=1) == self.target_class):
             self.isolation_pos = np.min(np.where(np.argmax(self.pri_and_post, axis=1) == self.target_class))
@@ -936,27 +1101,33 @@ class rule_accumulator:
 
     def score_rule(self, alpha=0.5):
         target_precision = [p[self.target_class] for p in self.pri_and_post]
-        target_coverage = [c[self.target_class] for c in self.pri_and_post_coverage]
+        target_recall = [r[self.target_class] for r in self.pri_and_post_recall]
+        target_f1 = [f[self.target_class] for f in self.pri_and_post_f1]
         target_accuracy = [a[self.target_class] for a in self.pri_and_post_accuracy]
-        target_pca = [[p, c, a] for p, c, a in zip(target_precision, target_coverage, target_accuracy)]
+        target_plausibility = [u[self.target_class] for u in self.pri_and_post_plausibility]
+        target_prf = [[p, r, f, a, u] for p, r, f, a, u in zip(target_precision, target_recall, target_f1, target_accuracy, target_plausibility)]
 
         target_cardinality = [i for i in range(len(target_precision))]
 
         lf = lambda x: math.log2(x + 1)
-        score_fun1 = lambda p, c, crd, alp: alp * p + (1.0 - alp) * c * crd / (1.0 + crd**2)
-        score_fun2 = lambda a, crd: lf(a * crd / (1.0 + crd**2))
+        score_fun1 = lambda f, crd, alp: lf(f * crd * alp / (1.0 + ((1 - alp) * crd**2)))
+        score_fun2 = lambda a, crd, alp: lf(a * crd * alp / (1.0 + ((1 - alp) * crd**2)))
 
-        score1 = [s for s in map(score_fun1, target_precision, target_coverage, target_cardinality, [alpha] * len(target_precision))]
-        score2 = [s for s in map(score_fun2, target_accuracy, target_cardinality)]
+        score1 = [s for s in map(score_fun1, target_f1, target_cardinality, [alpha] * len(target_cardinality))]
+        score2 = [s for s in map(score_fun2, target_accuracy, target_cardinality, [alpha] * len(target_cardinality))]
 
-        return(target_pca, score1, score2)
+        return(target_prf, score1, score2)
 
     def lite_instance(self):
         return(rule_acc_lite(self.instance_id, self.var_dict, self.paths,
-        self.patterns, self.rule, self.pruned_rule,
-        self.conjunction_rule, self.target_class, self.major_class,
+        self.patterns, self.rule, self.pruned_rule, self.conjunction_rule,
+        self.target_class, self.target_class_label,
+        self.major_class, self.major_class_label,
         self.model_votes, self.model_post,
         self.coverage, self.precision, self.pri_and_post,
         self.pri_and_post_accuracy,
         self.pri_and_post_counts,
-        self.pri_and_post_coverage))
+        self.pri_and_post_recall,
+        self.pri_and_post_f1,
+        self.pri_and_post_plausibility,
+        self.pri_and_post_lift))

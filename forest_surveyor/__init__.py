@@ -21,3 +21,17 @@ def p_count(arr):
     {'labels' : labels,
     'counts' : counts,
     'p_counts' : counts / len(arr)})
+
+# insert any zeros for unrepresented classes
+def p_count_corrected(arr, classes):
+    n_classes = len(classes)
+    p_counts = p_count(arr)
+    pc = np.zeros(n_classes)
+    c = np.zeros(n_classes, dtype=np.int64)
+    for i, cn in enumerate(classes):
+        if cn in p_counts['labels']:
+            pc[i] = p_counts['p_counts'][np.where(p_counts['labels'] == cn)][0]
+            c[i] = p_counts['counts'][np.where(p_counts['labels'] == cn)][0]
+    return({'labels' : classes,
+    'counts' : c,
+    'p_counts' : pc})
