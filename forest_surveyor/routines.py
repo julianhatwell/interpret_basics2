@@ -7,7 +7,7 @@ import multiprocessing as mp
 from pandas import DataFrame
 from forest_surveyor import p_count, p_count_corrected
 from forest_surveyor.plotting import plot_confusion_matrix
-from forest_surveyor.structures import rule_accumulator, forest_walker, batch_getter, rule_tester
+from forest_surveyor.structures import rule_accumulator, forest_walker, batch_getter, rule_tester, loo_encoder
 from forest_surveyor.mp_callable import mp_run_rf
 from scipy.stats import chi2_contingency
 from math import sqrt
@@ -16,8 +16,8 @@ from sklearn.model_selection import ParameterGrid
 from sklearn.pipeline import make_pipeline
 from sklearn.metrics import confusion_matrix, cohen_kappa_score, precision_recall_fscore_support
 
+# bug in sk-learn. Should be fixed in August
 import warnings
-
 warnings.filterwarnings(module='sklearn*', action='ignore', category=DeprecationWarning)
 
 def tune_rf_mp(X, y, grid = None, random_state=123, save_path = None):
@@ -298,6 +298,20 @@ def run_batches(f_walker, getter,
             ra_gplaus_lite = ra_gplaus.lite_instance()
             del ra_gplaus
 
+            # re-run the profile to greedy f1
+            ra_gf1 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
+            ra_gf1.profile(sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='f1')
+            ra_gf1.prune_rule()
+            ra_gf1_lite = ra_gf1.lite_instance()
+            del ra_gf1
+
+            # re-run the profile to greedy accu
+            ra_gaccu = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
+            ra_gaccu.profile(sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='accuracy')
+            ra_gaccu.prune_rule()
+            ra_gaccu_lite = ra_gaccu.lite_instance()
+            del ra_gaccu
+
             # re-run the profile to greedy chi2
             ra_gchi2 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
             ra_gchi2.profile(sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='chi2')
@@ -306,7 +320,7 @@ def run_batches(f_walker, getter,
             del ra_gchi2
 
             # collect results
-            results[b * batch_size + i] = [ra_best1_lite, ra_best2_lite, ra_gprec_lite, ra_gplaus_lite, ra_gchi2_lite, ra_pen_lite, ra.lite_instance()]
+            results[b * batch_size + i] = [ra_best1_lite, ra_best2_lite, ra_gprec_lite, ra_gplaus_lite, ra_gf1_lite, ra_gaccu_lite, ra_gchi2_lite, ra_pen_lite, ra.lite_instance()]
 
         # saving a full rule_accumulator object at the end of each batch, for plotting etc
         sample_rule_accs[b] = ra
@@ -317,7 +331,7 @@ def run_batches(f_walker, getter,
     pickle.dump(results, results_store)
     results_store.close()
 
-    result_sets = ['score_fun1', 'score_fun2', 'greedy_prec', 'greedy_plaus', 'greedy_chisq', 'penultimate', 'exhaustive']
+    result_sets = ['score_fun1', 'score_fun2', 'greedy_prec', 'greedy_plaus', 'greedy_f1', 'greedy_accu', 'greedy_chisq', 'penultimate', 'exhaustive']
     return(sample_rule_accs, results, result_sets)
 
 def experiment(get_dataset, n_instances, n_batches,
@@ -401,14 +415,21 @@ def experiment(get_dataset, n_instances, n_batches,
     print()
     print('Compiling Training Results...(please wait)')
 
-    headers = ['instance_id', 'result_set', 'rule',
+    headers = ['instance_id', 'result_set',
+                'rule', 'pretty rule',
                 'pred class', 'pred class label',
                 'target class', 'target class label',
                 'majority vote share', 'pred prior',
-                'precision', 'recall', 'f1',
-                'accuracy', 'plausibility', 'lift',
-                'total coverage']
+                'precision(tr)', 'recall(tr)', 'f1(tr)',
+                'accuracy(tr)', 'plausibility(tr)', 'lift(tr)',
+                'total coverage(tr)',
+                'precision(tt)', 'recall(tt)', 'f1(tt)',
+                'accuracy(tt)', 'plausibility(tt)', 'lift(tt)',
+                'total coverage(tt)']
     output = [[]] * len(results) * len(result_sets)
+
+    # leave one out encoder for test set evaluation
+    looe = loo_encoder(tt['X_test'], tt['y_test'], tt['encoder'])
     for i in range(len(results)):
         # these are the same for a whole result set
         instance_id = results[i][0].instance_id
@@ -419,34 +440,57 @@ def experiment(get_dataset, n_instances, n_batches,
         mvs = results[i][0].model_post[tc]
         prior = results[i][0].pri_and_post[0][tc]
         for j, rs in enumerate(result_sets):
-            rule = mydata.pretty_rule(results[i][j].pruned_rule)
-            prec = list(reversed(results[i][j].pri_and_post))[0][tc]
-            recall = list(reversed(results[i][j].pri_and_post_recall))[0][tc]
-            f1 = list(reversed(results[i][j].pri_and_post_f1))[0][tc]
-            acc = list(reversed(results[i][j].pri_and_post_accuracy))[0][tc]
-            plaus = list(reversed(results[i][j].pri_and_post_plausibility))[0][tc]
-            lift = list(reversed(results[i][j].pri_and_post_lift))[0][tc]
-            coverage = list(reversed(results[i][j].coverage))[0]
+            rule = results[i][j].pruned_rule
+            pretty_rule = mydata.pretty_rule(rule)
+            tr_prec = list(reversed(results[i][j].pri_and_post))[0][tc]
+            tr_recall = list(reversed(results[i][j].pri_and_post_recall))[0][tc]
+            tr_f1 = list(reversed(results[i][j].pri_and_post_f1))[0][tc]
+            tr_acc = list(reversed(results[i][j].pri_and_post_accuracy))[0][tc]
+            tr_plaus = list(reversed(results[i][j].pri_and_post_plausibility))[0][tc]
+            tr_lift = list(reversed(results[i][j].pri_and_post_lift))[0][tc]
+            tr_coverage = list(reversed(results[i][j].coverage))[0]
+
+            instances, enc_instances, labels = looe.loo_encode(instance_id)
+            rt = rule_tester(data_container=mydata, rule=rule,
+                                sample_instances=enc_instances,
+                                sample_labels=labels)
+
+            eval_rule = rt.evaluate_rule()
+            tt_prec = eval_rule['post'][tc]
+            tt_recall = eval_rule['recall'][tc]
+            tt_f1 = eval_rule['f1'][tc]
+            tt_acc = eval_rule['accuracy'][tc]
+            tt_plaus = eval_rule['plausibility'][tc]
+            tt_lift = eval_rule['lift'][tc]
+            tt_coverage = eval_rule['coverage']
 
             output[j * len(results) + i] = [instance_id,
                     rs,
                     rule,
+                    pretty_rule,
                     mc,
                     mc_lab,
                     tc,
                     tc_lab,
                     mvs,
                     prior,
-                    prec,
-                    recall,
-                    f1,
-                    acc,
-                    plaus,
-                    lift,
-                    coverage]
+                    tr_prec,
+                    tr_recall,
+                    tr_f1,
+                    tr_acc,
+                    tr_plaus,
+                    tr_lift,
+                    tr_coverage,
+                    tt_prec,
+                    tt_recall,
+                    tt_f1,
+                    tt_acc,
+                    tt_plaus,
+                    tt_lift,
+                    tt_coverage]
 
     output_df = DataFrame(output, columns=headers)
-    output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '.csv'))
+    output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '3.csv'))
     print('Results saved at ' + mydata.pickle_path('results.pickle'))
     print()
     print('To retrieve results execute the following:')

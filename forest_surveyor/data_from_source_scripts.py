@@ -455,43 +455,46 @@ if True:
 # rcdv
 if True:
     '''
-    rcdv = pd.read_excel(pickle_path('rcdv.xlsx')
-                                    , sheet_name='1978'
-                                    , header=0)
-    rcdv = rcdv.append(pd.read_excel(pickle_path('rcdv.xlsx')
+    # random seed for train test split and sampling
+    random_state = 123
+    rcdv = pd.read_excel('data_source_files\\rcdv.xlsx'
+                                        , sheet_name='1978'
+                                        , header=0)
+    # merging two sheets brought in row numbers
+    rcdv = rcdv.append(pd.read_excel('data_source_files\\rcdv.xlsx'
                                     , sheet_name='1980'
                                     , header=0))
 
-    # merging two sheets brought in row numbers
-    rcdv.reset_index()
-
-    # remove cols we don't want. rename file to miss as it is needed to indicate where were missing values
+    # tidy index and drop col1
+    rcdv.reset_index(drop=True, inplace=True)
     rcdv.drop(labels='Column1', axis=1, inplace=True)
+
+    # rename file to miss as it is needed to indicate where were missing values
     rcdv.columns = ['miss' if vn == 'file' else vn for vn in rcdv.columns]
 
     var_names=list(rcdv)[:16] + list(rcdv)[17:] + list(rcdv)[16:17] # put recid to the end
     rcdv = rcdv[var_names]
 
     vars_types = ['nominal'
-                , 'nominal'
-                , 'nominal'
-                , 'nominal'
-                , 'nominal'
-                , 'nominal'
-                , 'nominal'
-                , 'nominal'
-                , 'nominal'
-                , 'nominal'
-                , 'continuous'
-                , 'continuous'
-                , 'continuous'
-                , 'continuous'
-                , 'continuous'
-                , 'continuous'
-                , 'nominal'
-                , 'continuous'
-                , 'nominal'
-                , 'nominal']
+                    , 'nominal'
+                    , 'nominal'
+                    , 'nominal'
+                    , 'nominal'
+                    , 'nominal'
+                    , 'nominal'
+                    , 'nominal'
+                    , 'nominal'
+                    , 'nominal'
+                    , 'continuous'
+                    , 'continuous'
+                    , 'continuous'
+                    , 'continuous'
+                    , 'continuous'
+                    , 'continuous'
+                    , 'nominal'
+                    , 'continuous'
+                    , 'nominal'
+                    , 'nominal']
 
     class_col = 'recid'
     features = [vn for vn in var_names if vn != class_col]
@@ -499,6 +502,7 @@ if True:
     # recode priors, all that were set to -9 were missing, and it is logged in the file variable (3 = missing data indicator)
     rcdv['priors'] = rcdv['priors'].apply(lambda x: 0 if x == -9 else x)
     rcdv['miss'] = rcdv['miss'].apply(lambda x: 1 if x == 3 else 0)
+    rcdv['recid'] = rcdv['recid'].apply(lambda x: 'T' if x == 1 else 'F')
 
     # remove cols we don't want. Time is only useful in survival analysis. Correlates exactly with recid.
     to_be_del = ['time']
@@ -509,5 +513,10 @@ if True:
         del features[np.where(np.array(features) == tbd)[0][0]]
 
     # save it out
-    rcdv.to_csv(pickle_path('rcdv.csv.gz'), index=False, compression='gzip')
+    rcdv.to_csv('forest_surveyor\\datafiles\\rcdv.csv.gz', index=False, compression='gzip')
+
+    # create small set that is easier to play with on a laptop
+    samp = rcdv.sample(frac=0.1, random_state=random_state)
+    samp.reset_index(drop=True, inplace=True)
+    samp.to_csv('forest_surveyor\\datafiles\\rcdv_samp.csv.gz', index=False, compression='gzip')
     '''
