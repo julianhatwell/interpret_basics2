@@ -4,7 +4,7 @@ import timeit
 import pickle
 import numpy as np
 import multiprocessing as mp
-from pandas import DataFrame
+from pandas import DataFrame, Series
 from forest_surveyor import p_count, p_count_corrected
 from forest_surveyor.plotting import plot_confusion_matrix
 from forest_surveyor.structures import rule_accumulator, forest_walker, batch_getter, rule_tester, loo_encoder
@@ -225,11 +225,10 @@ def cor_incor_forest_survey(f_walker, X, y):
     return(f_cor_stats, f_incor_stats)
 
 def run_batches(f_walker, getter,
- data_container, sample_instances, sample_labels,
+ data_container, encoder, sample_instances, sample_labels,
  batch_size = 1, n_batches = 1,
  support_paths=0.1, alpha_paths=0.5,
- alpha_scores=0.5, which_trees='majority',
- greedy=None):
+ alpha_scores=0.5, which_trees='majority'):
     sample_rule_accs = [[]] * n_batches
     results = [[]] * (batch_size * n_batches)
     for b in range(n_batches):
@@ -255,7 +254,7 @@ def run_batches(f_walker, getter,
             for wp in walked.patterns:
                 rt = rule_tester(data_container=data_container,
                 rule=wp,
-                sample_instances=sample_instances)
+                sample_instances=encoder.transform(sample_instances))
                 idx = rt.apply_rule()
                 covered = p_count_corrected(sample_labels[idx], [i for i in range(len(data_container.class_names))])['counts']
                 not_covered = p_count_corrected(sample_labels[~idx], [i for i in range(len(data_container.class_names))])['counts']
@@ -267,7 +266,7 @@ def run_batches(f_walker, getter,
 
             # grow a maximal rule from the freq patts
             ra = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra.profile(sample_instances=sample_instances, sample_labels=sample_labels, greedy=greedy)
+            ra.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, prediction_model=f_walker.prediction_model)
             ra.prune_rule()
 
             # score the rule at each additional term
@@ -279,55 +278,55 @@ def run_batches(f_walker, getter,
 
             # re-run the profile to the best scoring fixed length
             ra_best1 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra_best1.profile(sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=score1_loc, greedy=greedy)
+            ra_best1.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=score1_loc, prediction_model=f_walker.prediction_model)
             ra_best1.prune_rule()
             ra_best1_lite = ra_best1.lite_instance()
             del ra_best1
 
             ra_best2 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra_best2.profile(sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=score2_loc, greedy=greedy)
+            ra_best2.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=score2_loc, prediction_model=f_walker.prediction_model)
             ra_best2.prune_rule()
             ra_best2_lite = ra_best2.lite_instance()
             del ra_best2
 
             # re-run the profile to penultimate by instability/misclassification = 0
             ra_pen = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra_pen.profile(sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy=greedy)
+            ra_pen.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, prediction_model=f_walker.prediction_model)
             ra_pen.prune_rule()
             ra_pen_lite = ra_pen.lite_instance()
             del ra_pen
 
             # re-run the profile to greedy precis
             ra_gprec = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra_gprec.profile(sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='precision')
+            ra_gprec.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='precision', prediction_model=f_walker.prediction_model)
             ra_gprec.prune_rule()
             ra_gprec_lite = ra_gprec.lite_instance()
             del ra_gprec
 
             # re-run the profile to greedy plaus
             ra_gplaus = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra_gplaus.profile(sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='plausibility')
+            ra_gplaus.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='plausibility', prediction_model=f_walker.prediction_model)
             ra_gplaus.prune_rule()
             ra_gplaus_lite = ra_gplaus.lite_instance()
             del ra_gplaus
 
             # re-run the profile to greedy f1
             ra_gf1 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra_gf1.profile(sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='f1')
+            ra_gf1.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='f1', prediction_model=f_walker.prediction_model)
             ra_gf1.prune_rule()
             ra_gf1_lite = ra_gf1.lite_instance()
             del ra_gf1
 
             # re-run the profile to greedy accu
             ra_gaccu = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra_gaccu.profile(sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='accuracy')
+            ra_gaccu.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='accuracy', prediction_model=f_walker.prediction_model)
             ra_gaccu.prune_rule()
             ra_gaccu_lite = ra_gaccu.lite_instance()
             del ra_gaccu
 
             # re-run the profile to greedy chi2
             ra_gchi2 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra_gchi2.profile(sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='chi2')
+            ra_gchi2.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='chi2', prediction_model=f_walker.prediction_model)
             ra_gchi2.prune_rule()
             ra_gchi2_lite = ra_gchi2.lite_instance()
             del ra_gchi2
@@ -447,7 +446,8 @@ def experiment(get_dataset, n_instances, n_batches,
     rule_acc, results, result_sets = run_batches(f_walker=f_walker,
      getter=getter,
      data_container=mydata,
-     sample_instances=tt['X_train_enc'],
+     encoder=tt['encoder'],
+     sample_instances=tt['X_train'],
      sample_labels=tt['y_train'],
      support_paths=support_paths,
      alpha_paths=alpha_paths,
@@ -496,12 +496,14 @@ def experiment(get_dataset, n_instances, n_batches,
             tr_lift = list(reversed(results[i][j].pri_and_post_lift))[0][tc]
             tr_coverage = list(reversed(results[i][j].coverage))[0]
 
+            # get test sample ready by leave one out, then boot strapping, encoding and evaluating
             instances, enc_instances, labels = looe.loo_encode(instance_id)
             rt = rule_tester(data_container=mydata, rule=rule,
-                                sample_instances=enc_instances,
-                                sample_labels=labels)
-
+                                sample_instances=instances)
+            rt.sample_instances, rt.sample_labels = rt.bootstrap_pred(prediction_model=enc_rf, instances=instances)
+            rt.sample_instances = tt['encoder'].transform(rt.sample_instances)
             eval_rule = rt.evaluate_rule()
+
             tt_prec = eval_rule['post'][tc]
             tt_recall = eval_rule['recall'][tc]
             tt_f1 = eval_rule['f1'][tc]
@@ -620,7 +622,7 @@ def experiment(get_dataset, n_instances, n_batches,
 
     print()
     output_df = DataFrame(output, columns=headers)
-    output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '3.csv'))
+    output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '.csv'))
     print('Results saved at ' + mydata.pickle_path('results.pickle'))
     print()
     print('To retrieve results execute the following:')

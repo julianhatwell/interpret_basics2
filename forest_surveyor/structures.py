@@ -701,6 +701,13 @@ class loo_encoder:
 
 class rule_evaluator:
 
+    def bootstrap_pred(self, prediction_model, instances=None):
+        if instances is None:
+            instances=self.instances
+        boot_instances = instances.sample(frac=1.0, replace=True)
+        boot_labels = Series(prediction_model.predict((boot_instances)), index=boot_instances.index)
+        return(boot_instances, boot_labels)
+
     def apply_rule(self, rule=None, instances=None):
         if rule is None:
             rule = self.rule
@@ -713,8 +720,7 @@ class rule_evaluator:
         return(idx)
 
     def evaluate_rule(self, rule=None, instances=None,
-                    labels=None, encoder=None,
-                    class_names=None):
+                    labels=None, class_names=None):
         if rule is None:
             rule = self.rule
         if instances is None:
@@ -727,7 +733,7 @@ class rule_evaluator:
         if class_names is None:
             class_names = self.class_names
 
-        idx = self.apply_rule()
+        idx = self.apply_rule(rule, instances)
         coverage = idx.sum()/len(idx) # tp + fp / tp + fp + tn + fn
 
         priors = p_count_corrected(labels, [i for i in range(len(class_names))])
@@ -823,6 +829,7 @@ class rule_accumulator(rule_evaluator):
         self.reverted = []
         self.total_points = sum([scrs[2] for scrs in self.patterns])
         self.accumulated_points = 0
+        self.encoder = None
         self.sample_instances = None
         self.sample_labels = None
         self.n_instances = None
@@ -972,7 +979,8 @@ class rule_accumulator(rule_evaluator):
             self.reverted.append(False)
             return(False)
 
-    def profile(self, sample_instances, sample_labels
+    def profile(self, encoder, sample_instances, sample_labels, prediction_model
+                        , random_state=123
                         , stopping_param = 1
                         , fixed_length = None
                         , target_class=None
@@ -983,6 +991,7 @@ class rule_accumulator(rule_evaluator):
             stopping_param = 1
             print('warning: stopping_param should be 0 <= p <= 1. Value was reset to 1')
         self.stopping_param = stopping_param
+        self.encoder = encoder
         self.sample_instances = sample_instances
         self.sample_labels = sample_labels
         self.n_classes = len(np.unique(self.sample_labels))
@@ -1014,8 +1023,9 @@ class rule_accumulator(rule_evaluator):
             else:
                 self.target_class_label = self.get_label(self.class_col, self.target_class)
 
-        # prior
-        p_counts = p_count_corrected(sample_labels.values, [i for i in range(len(self.class_names))])
+        # prior - empty rule
+        boot_instances, boot_labels = self.bootstrap_pred(prediction_model, sample_instances)
+        p_counts = p_count_corrected(boot_labels.values, [i for i in range(len(self.class_names))])
         self.pri_and_post = np.array([p_counts['p_counts'].tolist()])
         self.pri_and_post_counts = np.array([p_counts['counts'].tolist()])
         self.pri_and_post_recall = [np.full(self.n_classes, 1.0)] # counts / prior counts
@@ -1050,7 +1060,9 @@ class rule_accumulator(rule_evaluator):
         while current_precision != 1.0 and current_precision != 0.0 and self.accumulated_points <= self.total_points * self.stopping_param and (fixed_length is None or len(self.cum_info_gain) < max(1, fixed_length) + 1):
             self.profile_iter += 1
             self.add_rule(p_total = self.stopping_param)
-            eval_rule = self.evaluate_rule()
+            boot_instances, boot_labels = self.bootstrap_pred(prediction_model, sample_instances)
+            eval_rule = self.evaluate_rule(instances=encoder.transform(boot_instances),
+                                            labels=boot_labels)
 
             # entropy / information
             previous_entropy = current_entropy
@@ -1078,7 +1090,7 @@ class rule_accumulator(rule_evaluator):
                     previous = list(reversed(self.pri_and_post_accuracy))[0][np.where(eval_rule['labels'] == self.target_class)]
                     should_continue = self.__greedy_commit__(current, previous)
                 elif greedy == 'chi2':
-                    previous_counts = p_count_corrected(sample_labels.loc[self.apply_rule(self.previous_rule)].values, [i for i in range(len(self.class_names))])['counts']
+                    previous_counts = list(reversed(self.pri_and_post_counts))[0]
                     observed = np.array((eval_rule['counts'], previous_counts))
                     if eval_rule['counts'].sum() == 0: # previous_counts.sum() == 0 is impossible
                         should_continue = self.__greedy_commit__(1, 0) # go ahead with rule as the algorithm will finish here
