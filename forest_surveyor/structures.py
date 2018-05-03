@@ -160,7 +160,7 @@ class data_container:
                 return(Tr_Fa(x,y,z))
             else:
                 return(lt_gt(x,y,z))
-        return([bin_or_cont(f, t, v, self.onehot_dict) for f, t, v in rule])
+        return(' AND '.join([bin_or_cont(f, t, v, self.onehot_dict) for f, t, v in rule]))
 
 class paths_container:
     def __init__(self

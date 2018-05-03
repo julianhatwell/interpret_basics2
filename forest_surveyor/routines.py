@@ -14,7 +14,10 @@ from math import sqrt
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import ParameterGrid
 from sklearn.pipeline import make_pipeline
-from sklearn.metrics import confusion_matrix, cohen_kappa_score, precision_recall_fscore_support
+from sklearn.metrics import confusion_matrix, cohen_kappa_score, precision_recall_fscore_support, accuracy_score
+
+from anchor import anchor_tabular as anchtab
+from lime import lime_tabular as limtab
 
 # bug in sk-learn. Should be fixed in August
 import warnings
@@ -153,11 +156,21 @@ def train_rf(X, y, params = None, encoder = None, random_state = 123):
 
 def evaluate_model(prediction_model, X, y, class_names=None, plot_cm=True, plot_cm_norm=True):
     pred = prediction_model.predict(X)
-    print("Cohen's Kappa on unseen instances: " "{:0.4f}".format(cohen_kappa_score(y, pred)))
 
     # view the confusion matrix
     cm = confusion_matrix(y, pred)
     prfs = precision_recall_fscore_support(y, pred)
+    acc = accuracy_score(y, pred)
+    coka = cohen_kappa_score(y, pred)
+    print("Accuracy on unseen instances: " "{:0.4f}".format(acc))
+    print("Cohen's Kappa on unseen instances: " "{:0.4f}".format(coka))
+    print()
+    print('Precision: ' + str(prfs[0].round(2).tolist()))
+    print('Recall: ' + str(prfs[1].round(2).tolist()))
+    print('F1 Score: ' + str(prfs[2].round(2).tolist()))
+    print('Support: ' + str(prfs[3].round(2).tolist()))
+    print()
+
     if plot_cm:
         plot_confusion_matrix(cm, class_names=class_names,
                               title='Confusion matrix, without normalization')
@@ -167,7 +180,7 @@ def evaluate_model(prediction_model, X, y, class_names=None, plot_cm=True, plot_
                               , class_names=class_names
                               , normalize=True,
                               title='Normalized confusion matrix')
-    return(cm, prfs)
+    return(cm, acc, coka, prfs)
 
 def forest_survey(f_walker, X, y):
 
@@ -334,13 +347,50 @@ def run_batches(f_walker, getter,
     result_sets = ['score_fun1', 'score_fun2', 'greedy_prec', 'greedy_plaus', 'greedy_f1', 'greedy_accu', 'greedy_chisq', 'penultimate', 'exhaustive']
     return(sample_rule_accs, results, result_sets)
 
+def anchors_preproc(get_data):
+    mydata = get_data()
+    tt = mydata.tt_split()
+
+    # mappings for anchors
+    mydata.class_names=mydata.get_label(mydata.class_col, [i for i in range(len(mydata.class_names))]).tolist()
+    mydata.unsorted_categorical = [(v, mydata.var_dict[v]['order_col']) for v in mydata.var_dict if mydata.var_dict[v]['data_type'] == 'nominal' and mydata.var_dict[v]['class_col'] != True]
+    mydata.categorical_features = [c[1] for c in sorted(mydata.unsorted_categorical, key = lambda x: x[1])]
+    mydata.categorical_names = {i : mydata.var_dict[v]['labels'] for v, i in mydata.unsorted_categorical}
+
+    # discretizes all cont vars
+    disc = limtab.QuartileDiscretizer(data=np.array(mydata.data.drop(labels=mydata.class_col, axis=1)),
+                                             categorical_features=mydata.categorical_features,
+                                             feature_names=mydata.features)
+
+    # update the tt object
+    tt['X_train'] = np.array(disc.discretize(np.array(tt['X_train'])))
+    tt['X_test'] = np.array(disc.discretize(np.array(tt['X_test'])))
+    tt['y_train'] = np.array(tt['y_train'])
+    tt['y_test'] = np.array(tt['y_test'])
+
+    # add the mappings of discretized vars for anchors
+    mydata.categorical_names.update(disc.names)
+
+    explainer = anchtab.AnchorTabularExplainer(mydata.class_names, mydata.features, tt['X_train'], mydata.categorical_names)
+    explainer.fit(tt['X_train'], tt['y_train'], tt['X_test'], tt['y_test'])
+    # update the tt object
+    tt['encoder'] = explainer.encoder
+    tt['X_train_enc'] = explainer.encoder.transform(tt['X_train'])
+
+    return(mydata, tt, explainer)
+
+def anchors_explanation(instance, explainer, forest, random_state=123, threshold=0.95):
+    np.random.seed(random_state)
+    exp = explainer.explain_instance(instance, forest.predict, threshold=threshold)
+    return(exp)
+
 def experiment(get_dataset, n_instances, n_batches,
  support_paths=0.1,
  alpha_paths=0.5,
  alpha_scores=0.5,
  which_trees='majority',
- greedy=None,
- eval_model=False):
+ eval_model=False,
+ run_anchors=True):
 
     print('LOADING NEW DATA SET.')
     print()
@@ -369,13 +419,9 @@ def experiment(get_dataset, n_instances, n_batches,
      random_state=mydata.random_state)
 
     if eval_model:
-        cm, prfs = evaluate_model(prediction_model=enc_rf, X=tt['X_test'], y=tt['y_test'],
-                     class_names=mydata.get_label(mydata.class_col, sorted(tt['y_train'].unique())),
+        cm, acc, coka, prfs = evaluate_model(prediction_model=enc_rf, X=tt['X_test'], y=tt['y_test'],
+                     class_names=mydata.get_label(mydata.class_col, [i for i in range(len(mydata.class_names))]).tolist(),
                      plot_cm=True, plot_cm_norm=True)
-        print('Precision: ' + str(prfs[0].tolist()))
-        print('Recall: ' + str(prfs[1].tolist()))
-        print('F1 Score: ' + str(prfs[2].tolist()))
-        print('Support: ' + str(prfs[3].tolist()))
 
     # fit the forest_walker
     f_walker = forest_walker(forest = rf,
@@ -406,8 +452,8 @@ def experiment(get_dataset, n_instances, n_batches,
      alpha_paths=alpha_paths,
      alpha_scores=alpha_scores,
      which_trees=which_trees,
-     batch_size = batch_size,
-     n_batches = n_batches)
+     batch_size=batch_size,
+     n_batches=n_batches)
 
     end_time = timeit.default_timer()
     elapsed_time = end_time - start_time
@@ -415,8 +461,7 @@ def experiment(get_dataset, n_instances, n_batches,
     print()
     print('Compiling Training Results...(please wait)')
 
-    headers = ['instance_id', 'result_set',
-                'rule', 'pretty rule',
+    headers = ['instance_id', 'result_set', 'pretty rule',
                 'pred class', 'pred class label',
                 'target class', 'target class label',
                 'majority vote share', 'pred prior',
@@ -466,7 +511,6 @@ def experiment(get_dataset, n_instances, n_batches,
 
             output[j * len(results) + i] = [instance_id,
                     rs,
-                    rule,
                     pretty_rule,
                     mc,
                     mc_lab,
@@ -489,6 +533,91 @@ def experiment(get_dataset, n_instances, n_batches,
                     tt_lift,
                     tt_coverage]
 
+    if run_anchors:
+        print('Processing Anchors')
+        print('Starting new run at: ' + time.asctime(time.gmtime()))
+        start_time = timeit.default_timer()
+        print()
+        instance_ids = tt['X_test'].index.tolist() # record of row indices will be lost after preproc
+        mydata, tt, explainer = anchors_preproc(get_dataset)
+
+        rf, enc_rf = train_rf(tt['X_train_enc'], y=tt['y_train'],
+        params=params,
+        encoder=tt['encoder'],
+        random_state=mydata.random_state)
+
+        if eval_model:
+            cm, acc, coka, prfs = evaluate_model(prediction_model=enc_rf, X=tt['X_test'], y=tt['y_test'],
+                         class_names=mydata.class_names,
+                         plot_cm=True, plot_cm_norm=True)
+        else:
+            cm, acc, coka, prfs = evaluate_model(prediction_model=enc_rf, X=tt['X_test'], y=tt['y_test'],
+                         class_names=mydata.class_names,
+                         plot_cm=False, plot_cm_norm=False)
+        output_anch = [[]] * n_instances
+        for i in range(n_instances):
+            instance_id = instance_ids[i]
+            if i % 10 == 0: print('Working on Anchors for instance ' + str(instance_id))
+            instance = tt['X_test'][i]
+            exp = anchors_explanation(instance, explainer, rf, threshold=0.80)
+
+            # Get test examples where the anchor applies
+            fit_anchor = np.where(np.all(tt['X_test'][:, exp.features()] == tt['X_test'][i][exp.features()], axis=1))[0]
+
+            # capture results
+            mc = enc_rf.predict(tt['X_test'][i].reshape(1, -1))[0]
+            mc_lab = mydata.class_names[enc_rf.predict(tt['X_test'][i].reshape(1, -1))[0]]
+            tc = enc_rf.predict(tt['X_test'][i].reshape(1, -1))[0]
+            tc_lab = mydata.class_names[enc_rf.predict(tt['X_test'][i].reshape(1, -1))[0]]
+            mvs = np.nan
+            prior = np.nan
+            rule = ' AND '.join(exp.names())
+            pretty_rule = ' AND '.join(exp.names())
+            tr_prec = exp.precision()
+            tr_recall = np.nan
+            tr_f1 = np.nan
+            tr_acc = np.nan
+            tr_plaus = np.nan
+            tr_lift = np.nan
+            tr_coverage = exp.coverage()
+
+            tt_prec = np.mean(enc_rf.predict(tt['X_test'][fit_anchor]) == enc_rf.predict(tt['X_test'][i].reshape(1, -1)))
+            tt_recall = np.nan
+            tt_f1 = np.nan
+            tt_acc = np.nan
+            tt_plaus = np.nan
+            tt_lift = np.nan
+            tt_coverage = fit_anchor.shape[0] / float(tt['X_test'].shape[0])
+
+            output_anch[i] = [instance_id,
+                                'anchors', # result_set
+                                pretty_rule,
+                                mc,
+                                mc_lab,
+                                tc,
+                                tc_lab,
+                                mvs,
+                                prior,
+                                tr_prec,
+                                tr_recall,
+                                tr_f1,
+                                tr_acc,
+                                tr_plaus,
+                                tr_lift,
+                                tr_coverage,
+                                tt_prec,
+                                tt_recall,
+                                tt_f1,
+                                tt_acc,
+                                tt_plaus,
+                                tt_lift,
+                                tt_coverage]
+        output = np.concatenate((output, output_anch), axis=0)
+        end_time = timeit.default_timer()
+        elapsed_time = end_time - start_time
+        print('Done. Completed run at: ' + time.asctime(time.gmtime()) + '. Elapsed time (seconds) = ' + str(elapsed_time))
+
+    print()
     output_df = DataFrame(output, columns=headers)
     output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '3.csv'))
     print('Results saved at ' + mydata.pickle_path('results.pickle'))
@@ -497,7 +626,6 @@ def experiment(get_dataset, n_instances, n_batches,
     print('results_store = open(\'' + mydata.pickle_path('results.pickle') + '\', "rb")')
     print('results = pickle.load(results_store)')
     print('results_store.close()')
-    print()
     print()
     return(rule_acc, results, output_df)
 
