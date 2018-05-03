@@ -433,7 +433,8 @@ def experiment(get_dataset, n_instances, n_batches,
     getter = batch_getter(instances=tt['X_test'], labels=tt['y_test'])
 
     # faster to do one batch, avoids the overhead of setting up many but consumes more mem
-    batch_size = int(min(n_instances, len(tt['y_test'])) / n_batches)
+    n_instances = min(n_instances, len(tt['y_test']))
+    batch_size = int(n_instances / n_batches)
 
     print('''NOTE: During run, true divide errors are acceptable.
     Returned when a tree does not contain any node for either/both upper and lower bounds of a feature.
