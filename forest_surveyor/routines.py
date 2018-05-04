@@ -228,7 +228,7 @@ def run_batches(f_walker, getter,
  data_container, encoder, sample_instances, sample_labels,
  batch_size = 1, n_batches = 1,
  support_paths=0.1, alpha_paths=0.5,
- alpha_scores=0.5, which_trees='majority'):
+ alpha_scores=0.5, which_trees='majority', precis_threshold=0.95):
     sample_rule_accs = [[]] * n_batches
     results = [[]] * (batch_size * n_batches)
     for b in range(n_batches):
@@ -267,7 +267,7 @@ def run_batches(f_walker, getter,
 
             # grow a maximal rule from the freq patts
             ra = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, prediction_model=f_walker.prediction_model)
+            ra.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
             ra.prune_rule()
 
             # score the rule at each additional term
@@ -279,55 +279,55 @@ def run_batches(f_walker, getter,
 
             # re-run the profile to the best scoring fixed length
             ra_best1 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra_best1.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=score1_loc, prediction_model=f_walker.prediction_model)
+            ra_best1.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=score1_loc, prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
             ra_best1.prune_rule()
             ra_best1_lite = ra_best1.lite_instance()
             del ra_best1
 
             ra_best2 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra_best2.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=score2_loc, prediction_model=f_walker.prediction_model)
+            ra_best2.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=score2_loc, prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
             ra_best2.prune_rule()
             ra_best2_lite = ra_best2.lite_instance()
             del ra_best2
 
             # re-run the profile to penultimate by instability/misclassification = 0
             ra_pen = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra_pen.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, prediction_model=f_walker.prediction_model)
+            ra_pen.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
             ra_pen.prune_rule()
             ra_pen_lite = ra_pen.lite_instance()
             del ra_pen
 
             # re-run the profile to greedy precis
             ra_gprec = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra_gprec.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='precision', prediction_model=f_walker.prediction_model)
+            ra_gprec.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='precision', prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
             ra_gprec.prune_rule()
             ra_gprec_lite = ra_gprec.lite_instance()
             del ra_gprec
 
             # re-run the profile to greedy plaus
             ra_gplaus = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra_gplaus.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='plausibility', prediction_model=f_walker.prediction_model)
+            ra_gplaus.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='plausibility', prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
             ra_gplaus.prune_rule()
             ra_gplaus_lite = ra_gplaus.lite_instance()
             del ra_gplaus
 
             # re-run the profile to greedy f1
             ra_gf1 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra_gf1.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='f1', prediction_model=f_walker.prediction_model)
+            ra_gf1.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='f1', prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
             ra_gf1.prune_rule()
             ra_gf1_lite = ra_gf1.lite_instance()
             del ra_gf1
 
             # re-run the profile to greedy accu
             ra_gaccu = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra_gaccu.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='accuracy', prediction_model=f_walker.prediction_model)
+            ra_gaccu.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='accuracy', prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
             ra_gaccu.prune_rule()
             ra_gaccu_lite = ra_gaccu.lite_instance()
             del ra_gaccu
 
             # re-run the profile to greedy chi2
             ra_gchi2 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra_gchi2.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='chi2', prediction_model=f_walker.prediction_model)
+            ra_gchi2.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='chi2', prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
             ra_gchi2.prune_rule()
             ra_gchi2_lite = ra_gchi2.lite_instance()
             del ra_gchi2
@@ -389,6 +389,7 @@ def experiment(get_dataset, n_instances, n_batches,
  alpha_paths=0.5,
  alpha_scores=0.5,
  which_trees='majority',
+ precis_threshold=0.95,
  eval_model=False,
  run_anchors=True):
 
@@ -422,6 +423,10 @@ def experiment(get_dataset, n_instances, n_batches,
         cm, acc, coka, prfs = evaluate_model(prediction_model=enc_rf, X=tt['X_test'], y=tt['y_test'],
                      class_names=mydata.get_label(mydata.class_col, [i for i in range(len(mydata.class_names))]).tolist(),
                      plot_cm=True, plot_cm_norm=True)
+    else:
+        cm, acc, coka, prfs = evaluate_model(prediction_model=enc_rf, X=tt['X_test'], y=tt['y_test'],
+                     class_names=mydata.get_label(mydata.class_col, [i for i in range(len(mydata.class_names))]).tolist(),
+                     plot_cm=False, plot_cm_norm=False)
 
     # fit the forest_walker
     f_walker = forest_walker(forest = rf,
@@ -454,6 +459,7 @@ def experiment(get_dataset, n_instances, n_batches,
      alpha_paths=alpha_paths,
      alpha_scores=alpha_scores,
      which_trees=which_trees,
+     precis_threshold=precis_threshold,
      batch_size=batch_size,
      n_batches=n_batches)
 
@@ -497,11 +503,11 @@ def experiment(get_dataset, n_instances, n_batches,
             tr_lift = list(reversed(results[i][j].pri_and_post_lift))[0][tc]
             tr_coverage = list(reversed(results[i][j].coverage))[0]
 
-            # get test sample ready by leave one out, then boot strapping, encoding and evaluating
+            # get test sample ready by leave one out, encoding and evaluating
             instances, enc_instances, labels = looe.loo_encode(instance_id)
             rt = rule_tester(data_container=mydata, rule=rule,
                                 sample_instances=instances)
-            rt.sample_instances, rt.sample_labels = rt.bootstrap_pred(prediction_model=enc_rf, instances=instances)
+            rt.sample_instances, rt.sample_labels = rt.encode_pred(prediction_model=enc_rf, instances=instances, bootstrap=False)
             if tt['encoder'] is not None:
                 rt.sample_instances = tt['encoder'].transform(rt.sample_instances)
             eval_rule = rt.evaluate_rule()
@@ -564,35 +570,81 @@ def experiment(get_dataset, n_instances, n_batches,
             instance_id = instance_ids[i]
             if i % 10 == 0: print('Working on Anchors for instance ' + str(instance_id))
             instance = tt['X_test'][i]
-            exp = anchors_explanation(instance, explainer, rf, threshold=0.80)
+            exp = anchors_explanation(instance, explainer, rf, threshold=precis_threshold)
 
             # Get test examples where the anchor applies
-            fit_anchor = np.where(np.all(tt['X_test'][:, exp.features()] == tt['X_test'][i][exp.features()], axis=1))[0]
+            fit_anchor_train = np.where(np.all(tt['X_train'][:, exp.features()] == instance[exp.features()], axis=1))[0]
+            fit_anchor_test = np.where(np.all(tt['X_test'][:, exp.features()] == instance[exp.features()], axis=1))[0]
 
-            # capture results
+            # train
+            priors = p_count_corrected(tt['y_train'], [i for i in range(len(mydata.class_names))])
+            p_counts = p_count_corrected(enc_rf.predict(tt['X_train'][fit_anchor_train]), [i for i in range(len(mydata.class_names))])
+            counts = p_counts['counts']
+            labels = p_counts['labels']
+            post = p_counts['p_counts']
+            p_corrected = np.array([p if p > 0.0 else 1.0 for p in post])
+            cover = counts.sum() / priors['counts'].sum()
+            recall = counts/priors['counts'] # recall
+            r_corrected = np.array([r if r > 0.0 else 1.0 for r in recall]) # to avoid div by zeros
+            observed = np.array((counts, priors['counts']))
+            if counts.sum() > 0: # previous_counts.sum() == 0 is impossible
+                chisq = chi2_contingency(observed=observed[:, np.where(observed.sum(axis=0) != 0)], correction=True)
+            else:
+                chisq = None
+            f1 = [2] * ((post * recall) / (p_corrected + r_corrected))
+            not_covered_counts = counts + (np.sum(priors['counts']) - priors['counts']) - (np.sum(counts) - counts)
+            accu = not_covered_counts/priors['counts'].sum()
+            plaus = ( post * ( counts / priors['counts'].sum() ) ) / priors['p_counts']
+            plaus /= np.sum(plaus)
+            lift = post / ( ( np.array([priors['counts'].sum()]) / np.array([priors['counts'].sum()]) ) * priors['p_counts'] )
+
+            # capture train
             mc = enc_rf.predict(tt['X_test'][i].reshape(1, -1))[0]
             mc_lab = mydata.class_names[enc_rf.predict(tt['X_test'][i].reshape(1, -1))[0]]
             tc = enc_rf.predict(tt['X_test'][i].reshape(1, -1))[0]
             tc_lab = mydata.class_names[enc_rf.predict(tt['X_test'][i].reshape(1, -1))[0]]
             mvs = np.nan
-            prior = np.nan
-            rule = ' AND '.join(exp.names())
+            prior = priors['p_counts'][tc]
             pretty_rule = ' AND '.join(exp.names())
-            tr_prec = exp.precision()
-            tr_recall = np.nan
-            tr_f1 = np.nan
-            tr_acc = np.nan
-            tr_plaus = np.nan
-            tr_lift = np.nan
-            tr_coverage = exp.coverage()
+            tr_prec = post[tc]
+            tr_recall = recall[tc]
+            tr_f1 = f1[tc]
+            tr_acc = accu[tc]
+            tr_plaus = plaus[tc]
+            tr_lift = lift[tc]
+            tr_coverage = cover
 
-            tt_prec = np.mean(enc_rf.predict(tt['X_test'][fit_anchor]) == enc_rf.predict(tt['X_test'][i].reshape(1, -1)))
-            tt_recall = np.nan
-            tt_f1 = np.nan
-            tt_acc = np.nan
-            tt_plaus = np.nan
-            tt_lift = np.nan
-            tt_coverage = fit_anchor.shape[0] / float(tt['X_test'].shape[0])
+            # test
+            priors = p_count_corrected(tt['y_test'], [i for i in range(len(mydata.class_names))])
+            p_counts = p_count_corrected(enc_rf.predict(tt['X_test'][fit_anchor_test]), [i for i in range(len(mydata.class_names))])
+            counts = p_counts['counts']
+            labels = p_counts['labels']
+            post = p_counts['p_counts']
+            p_corrected = np.array([p if p > 0.0 else 1.0 for p in post])
+            cover = counts.sum() / priors['counts'].sum()
+            recall = counts/priors['counts'] # recall
+            r_corrected = np.array([r if r > 0.0 else 1.0 for r in recall]) # to avoid div by zeros
+            observed = np.array((counts, priors['counts']))
+            if counts.sum() > 0: # previous_counts.sum() == 0 is impossible
+                chisq = chi2_contingency(observed=observed[:, np.where(observed.sum(axis=0) != 0)], correction=True)
+            else:
+                chisq = None
+            f1 = [2] * ((post * recall) / (p_corrected + r_corrected))
+            not_covered_counts = counts + (np.sum(priors['counts']) - priors['counts']) - (np.sum(counts) - counts)
+            # accuracy = (TP + TN) / num_instances formula: https://books.google.co.uk/books?id=ubzZDQAAQBAJ&pg=PR75&lpg=PR75&dq=rule+precision+and+coverage&source=bl&ots=Aa4Gj7fh5g&sig=6OsF3y4Kyk9KlN08OPQfkZCuZOc&hl=en&sa=X&ved=0ahUKEwjM06aW2brZAhWCIsAKHY5sA4kQ6AEIUjAE#v=onepage&q=rule%20precision%20and%20coverage&f=false
+            accu = not_covered_counts/priors['counts'].sum()
+            plaus = ( post * ( counts / priors['counts'].sum() ) ) / priors['p_counts']
+            plaus /= np.sum(plaus)
+            lift = post / ( ( np.array([priors['counts'].sum()]) / np.array([priors['counts'].sum()]) ) * priors['p_counts'] )
+
+            # capture test
+            tt_prec = post[tc]
+            tt_recall = recall[tc]
+            tt_f1 = f1[tc]
+            tt_acc = accu[tc]
+            tt_plaus = plaus[tc]
+            tt_lift = lift[tc]
+            tt_coverage = cover
 
             output_anch[i] = [instance_id,
                                 'anchors', # result_set

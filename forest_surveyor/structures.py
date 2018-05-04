@@ -98,6 +98,10 @@ class data_container:
         # flatten out the nesting
         self.onehot_features = list(chain.from_iterable(self.onehot_features))
 
+        # one hot encoding required for classifier
+        # otherwise integer vectors will be treated as ordinal
+        # OneHotEncoder takes an integer list as an argument to state which columns to encode
+        # If no nominal vars, then simply convert to sparse matrix format
         if len(self.categorical_features) > 0:
             encoder = OneHotEncoder(categorical_features=self.categorical_features)
             encoder.fit(self.data_pre.as_matrix())
@@ -141,15 +145,7 @@ class data_container:
         train_priors = y_train.value_counts().sort_index()/len(y_train)
         test_priors = y_test.value_counts().sort_index()/len(y_test)
 
-        # one hot encoding required for classifier
-        # otherwise integer vectors will be treated as ordinal
-        # OneHotEncoder takes an integer list as an argument to state which columns to encode
-        if self.encoder is not None:
-            X_train_enc = self.encoder.transform(X_train)
-            print('in encoder')
-        else:
-            print('in no encoder')
-            X_train_enc = sparse.csr_matrix(X_train)
+        X_train_enc = self.encoder.transform(X_train)
 
         return({
         'X_train': X_train,
@@ -710,12 +706,16 @@ class loo_encoder:
 
 class rule_evaluator:
 
-    def bootstrap_pred(self, prediction_model, instances=None):
+    def encode_pred(self, prediction_model, instances=None, bootstrap=False):
         if instances is None:
             instances=self.instances
-        boot_instances = instances.sample(frac=1.0, replace=True)
-        boot_labels = Series(prediction_model.predict((boot_instances)), index=boot_instances.index)
-        return(boot_instances, boot_labels)
+        if bootstrap:
+            boot_instances = instances.sample(frac=1.0, replace=True)
+            boot_labels = Series(prediction_model.predict((boot_instances)), index=boot_instances.index)
+            return(boot_instances, boot_labels)
+        else:
+            labels = Series(prediction_model.predict((instances)), index=instances.index)
+            return(instances, labels)
 
     def apply_rule(self, rule=None, instances=None):
         if rule is None:
@@ -792,7 +792,12 @@ class rule_tester(rule_evaluator):
 
     def __init__(self, data_container, rule, sample_instances, sample_labels=None):
         self.onehot_features = data_container.onehot_features
-        self.class_names = data_container.class_names
+        if data_container.class_col in data_container.le_dict.keys():
+            self.class_names = data_container.get_label(data_container.class_col, [i for i in range(len(data_container.class_names))])
+            self.get_label = data_container.get_label
+        else:
+            self.class_names = data_container.class_names
+            self.get_label = None
         self.rule = rule
         self.sample_instances = sample_instances
         self.sample_labels = sample_labels
@@ -815,9 +820,9 @@ class rule_accumulator(rule_evaluator):
         self.var_dict = deepcopy(data_container.var_dict)
         self.paths = paths_container.paths
         if paths_container.by_tree:
-            self.model_votes = p_count_corrected([paths_container.path_detail[t][paths_container.instance]['pred_class_label'] for t in range(len(paths_container.paths))], data_container.class_names)
+            self.model_votes = p_count_corrected([paths_container.path_detail[t][paths_container.instance]['pred_class_label'] for t in range(len(paths_container.paths))], self.class_names)
         else:
-            self.model_votes = p_count_corrected([paths_container.path_detail[paths_container.instance][t]['pred_class_label'] for t in range(len(paths_container.paths))], data_container.class_names)
+            self.model_votes = p_count_corrected([paths_container.path_detail[paths_container.instance][t]['pred_class_label'] for t in range(len(paths_container.paths))], self.class_names)
         self.patterns = paths_container.patterns
         self.unapplied_rules = [i for i in range(len(self.patterns))]
 
@@ -991,6 +996,7 @@ class rule_accumulator(rule_evaluator):
     def profile(self, encoder, sample_instances, sample_labels, prediction_model
                         , random_state=123
                         , stopping_param = 1
+                        , precis_threshold = 1.0
                         , fixed_length = None
                         , target_class=None
                         , greedy=None):
@@ -1033,8 +1039,8 @@ class rule_accumulator(rule_evaluator):
                 self.target_class_label = self.get_label(self.class_col, self.target_class)
 
         # prior - empty rule
-        boot_instances, boot_labels = self.bootstrap_pred(prediction_model, sample_instances)
-        p_counts = p_count_corrected(boot_labels.values, [i for i in range(len(self.class_names))])
+        _, pred_labels = self.encode_pred(prediction_model, sample_instances, bootstrap=False) # what the model would predict on the training sample
+        p_counts = p_count_corrected(pred_labels.values, [i for i in range(len(self.class_names))])
         self.pri_and_post = np.array([p_counts['p_counts'].tolist()])
         self.pri_and_post_counts = np.array([p_counts['counts'].tolist()])
         self.pri_and_post_recall = [np.full(self.n_classes, 1.0)] # counts / prior counts
@@ -1066,10 +1072,10 @@ class rule_accumulator(rule_evaluator):
         cum_points = 0
         self.profile_iter = 0
 
-        while current_precision != 1.0 and current_precision != 0.0 and self.accumulated_points <= self.total_points * self.stopping_param and (fixed_length is None or len(self.cum_info_gain) < max(1, fixed_length) + 1):
+        while current_precision != 1.0 and current_precision != 0.0 and current_precision < precis_threshold and self.accumulated_points <= self.total_points * self.stopping_param and (fixed_length is None or len(self.cum_info_gain) < max(1, fixed_length) + 1):
             self.profile_iter += 1
             self.add_rule(p_total = self.stopping_param)
-            boot_instances, boot_labels = self.bootstrap_pred(prediction_model, sample_instances)
+            boot_instances, boot_labels = self.encode_pred(prediction_model, sample_instances, bootstrap=True)
             eval_rule = self.evaluate_rule(instances=encoder.transform(boot_instances),
                                             labels=boot_labels)
 
