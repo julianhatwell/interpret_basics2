@@ -767,14 +767,25 @@ class rule_evaluator:
 
         not_covered_counts = counts + (np.sum(priors['counts']) - priors['counts']) - (np.sum(counts) - counts)
         # accuracy = (TP + TN) / num_instances formula: https://books.google.co.uk/books?id=ubzZDQAAQBAJ&pg=PR75&lpg=PR75&dq=rule+precision+and+coverage&source=bl&ots=Aa4Gj7fh5g&sig=6OsF3y4Kyk9KlN08OPQfkZCuZOc&hl=en&sa=X&ved=0ahUKEwjM06aW2brZAhWCIsAKHY5sA4kQ6AEIUjAE#v=onepage&q=rule%20precision%20and%20coverage&f=false
-        accu = not_covered_counts/len(idx)
+        accu = not_covered_counts/priors['counts'].sum()
 
         # plausibility normalize(precis * cover / priors)
-        plaus = ( post * ( counts / idx.sum() ) ) / priors['p_counts']
+
+        # to avoid div by zeros
+        pri_corrected = np.array([pri if pri > 0.0 else 1.0 for pri in priors['p_counts']])
+        pos_corrected = np.array([pos if pri > 0.0 else 0.0 for pri, pos in zip(priors['p_counts'], post)])
+        if counts.sum() == 0:
+            rec_corrected = np.array([0.0] * len(pos_corrected))
+            cov_corrected = np.array([1.0] * len(pos_corrected))
+        else:
+            rec_corrected = counts / counts.sum()
+            cov_corrected = np.array([counts.sum() / priors['counts'].sum()])
+
+        plaus = ( pos_corrected * ( rec_corrected ) ) / pri_corrected
         plaus /= np.sum(plaus)
 
         # lift = precis / (total_cover * prior)
-        lift = post / ( ( np.array([idx.sum()]) / np.array([len(idx)]) ) * priors['p_counts'] )
+        lift = pos_corrected / ( ( cov_corrected ) * pri_corrected )
 
         return({'coverage' : coverage,
                 'priors' : priors,

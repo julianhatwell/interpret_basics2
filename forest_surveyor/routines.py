@@ -467,7 +467,8 @@ def experiment(get_dataset, n_instances, n_batches,
     elapsed_time = end_time - start_time
     print('Done. Completed run at: ' + time.asctime(time.gmtime()) + '. Elapsed time (seconds) = ' + str(elapsed_time))
     print()
-    print('Compiling Training Results...(please wait)')
+    print('Compiling Training Results at: ' + time.asctime(time.gmtime()) + '...(please wait)')
+    start_time = timeit.default_timer()
 
     headers = ['instance_id', 'result_set', 'pretty rule',
                 'pred class', 'pred class label',
@@ -543,7 +544,11 @@ def experiment(get_dataset, n_instances, n_batches,
                     tt_plaus,
                     tt_lift,
                     tt_coverage]
-
+    end_time = timeit.default_timer()
+    elapsed_time = end_time - start_time
+    print('Results Completed at: ' + time.asctime(time.gmtime()) + '. Elapsed time (seconds) = ' + str(elapsed_time))
+    print('Whiteboxing Randfor Done')
+    print()
     if run_anchors:
         print('Processing Anchors')
         print('Starting new run at: ' + time.asctime(time.gmtime()))
@@ -578,7 +583,10 @@ def experiment(get_dataset, n_instances, n_batches,
 
             # train
             priors = p_count_corrected(tt['y_train'], [i for i in range(len(mydata.class_names))])
-            p_counts = p_count_corrected(enc_rf.predict(tt['X_train'][fit_anchor_train]), [i for i in range(len(mydata.class_names))])
+            if any(fit_anchor_train):
+                p_counts = p_count_corrected(enc_rf.predict(tt['X_train'][fit_anchor_train]), [i for i in range(len(mydata.class_names))])
+            else:
+                p_counts = p_count_corrected([None], [i for i in range(len(mydata.class_names))])
             counts = p_counts['counts']
             labels = p_counts['labels']
             post = p_counts['p_counts']
@@ -590,13 +598,23 @@ def experiment(get_dataset, n_instances, n_batches,
             if counts.sum() > 0: # previous_counts.sum() == 0 is impossible
                 chisq = chi2_contingency(observed=observed[:, np.where(observed.sum(axis=0) != 0)], correction=True)
             else:
-                chisq = None
+                chisq = np.nan
             f1 = [2] * ((post * recall) / (p_corrected + r_corrected))
             not_covered_counts = counts + (np.sum(priors['counts']) - priors['counts']) - (np.sum(counts) - counts)
             accu = not_covered_counts/priors['counts'].sum()
-            plaus = ( post * ( counts / priors['counts'].sum() ) ) / priors['p_counts']
+            # to avoid div by zeros
+            pri_corrected = np.array([pri if pri > 0.0 else 1.0 for pri in priors['p_counts']])
+            pos_corrected = np.array([pos if pri > 0.0 else 0.0 for pri, pos in zip(priors['p_counts'], post)])
+            if counts.sum() == 0:
+                rec_corrected = np.array([0.0] * len(pos_corrected))
+                cov_corrected = np.array([1.0] * len(pos_corrected))
+            else:
+                rec_corrected = counts / counts.sum()
+                cov_corrected = np.array([counts.sum() / priors['counts'].sum()])
+
+            plaus = ( pos_corrected * ( rec_corrected ) ) / pri_corrected
             plaus /= np.sum(plaus)
-            lift = post / ( ( np.array([priors['counts'].sum()]) / np.array([priors['counts'].sum()]) ) * priors['p_counts'] )
+            lift = pos_corrected / ( ( cov_corrected ) * pri_corrected )
 
             # capture train
             mc = enc_rf.predict(tt['X_test'][i].reshape(1, -1))[0]
@@ -616,7 +634,10 @@ def experiment(get_dataset, n_instances, n_batches,
 
             # test
             priors = p_count_corrected(tt['y_test'], [i for i in range(len(mydata.class_names))])
-            p_counts = p_count_corrected(enc_rf.predict(tt['X_test'][fit_anchor_test]), [i for i in range(len(mydata.class_names))])
+            if any(fit_anchor_test):
+                p_counts = p_count_corrected(enc_rf.predict(tt['X_test'][fit_anchor_test]), [i for i in range(len(mydata.class_names))])
+            else:
+                p_counts = p_count_corrected([None], [i for i in range(len(mydata.class_names))])
             counts = p_counts['counts']
             labels = p_counts['labels']
             post = p_counts['p_counts']
@@ -628,15 +649,23 @@ def experiment(get_dataset, n_instances, n_batches,
             if counts.sum() > 0: # previous_counts.sum() == 0 is impossible
                 chisq = chi2_contingency(observed=observed[:, np.where(observed.sum(axis=0) != 0)], correction=True)
             else:
-                chisq = None
+                chisq = np.nan
             f1 = [2] * ((post * recall) / (p_corrected + r_corrected))
             not_covered_counts = counts + (np.sum(priors['counts']) - priors['counts']) - (np.sum(counts) - counts)
             # accuracy = (TP + TN) / num_instances formula: https://books.google.co.uk/books?id=ubzZDQAAQBAJ&pg=PR75&lpg=PR75&dq=rule+precision+and+coverage&source=bl&ots=Aa4Gj7fh5g&sig=6OsF3y4Kyk9KlN08OPQfkZCuZOc&hl=en&sa=X&ved=0ahUKEwjM06aW2brZAhWCIsAKHY5sA4kQ6AEIUjAE#v=onepage&q=rule%20precision%20and%20coverage&f=false
             accu = not_covered_counts/priors['counts'].sum()
-            plaus = ( post * ( counts / priors['counts'].sum() ) ) / priors['p_counts']
-            plaus /= np.sum(plaus)
-            lift = post / ( ( np.array([priors['counts'].sum()]) / np.array([priors['counts'].sum()]) ) * priors['p_counts'] )
+            pri_corrected = np.array([pri if pri > 0.0 else 1.0 for pri in priors['p_counts']]) # to avoid div by zeros
+            pos_corrected = np.array([pos if pri > 0.0 else 0.0 for pri, pos in zip(priors['p_counts'], post)]) # to avoid div by zeros
+            if counts.sum() == 0:
+                rec_corrected = np.array([0.0] * len(pos_corrected))
+                cov_corrected = np.array([1.0] * len(pos_corrected))
+            else:
+                rec_corrected = counts / counts.sum()
+                cov_corrected = np.array([counts.sum() / priors['counts'].sum()])
 
+            plaus = ( pos_corrected * ( rec_corrected ) ) / pri_corrected
+            plaus /= np.sum(plaus)
+            lift = pos_corrected / ( ( cov_corrected ) * pri_corrected )
             # capture test
             tt_prec = post[tc]
             tt_recall = recall[tc]
@@ -672,7 +701,7 @@ def experiment(get_dataset, n_instances, n_batches,
         output = np.concatenate((output, output_anch), axis=0)
         end_time = timeit.default_timer()
         elapsed_time = end_time - start_time
-        print('Done. Completed run at: ' + time.asctime(time.gmtime()) + '. Elapsed time (seconds) = ' + str(elapsed_time))
+        print('Anchors Done. Completed run at: ' + time.asctime(time.gmtime()) + '. Elapsed time (seconds) = ' + str(elapsed_time))
 
     print()
     output_df = DataFrame(output, columns=headers)
