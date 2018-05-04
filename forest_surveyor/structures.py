@@ -15,6 +15,13 @@ from copy import deepcopy
 from scipy.stats import chi2_contingency
 from forest_surveyor import config as cfg
 
+class default_encoder:
+
+    def transform(x):
+        return(sparse.csr_matrix(x))
+    def fit(x):
+        return(x)
+
 class data_container:
 
     def __init__(self
@@ -96,7 +103,7 @@ class data_container:
             encoder.fit(self.data_pre.as_matrix())
             self.encoder = encoder
         else:
-            self.encoder = None
+            self.encoder = default_encoder
 
     # helper function for pickling files
     def pickle_path(self, filename = ''):
@@ -139,7 +146,9 @@ class data_container:
         # OneHotEncoder takes an integer list as an argument to state which columns to encode
         if self.encoder is not None:
             X_train_enc = self.encoder.transform(X_train)
+            print('in encoder')
         else:
+            print('in no encoder')
             X_train_enc = sparse.csr_matrix(X_train)
 
         return({

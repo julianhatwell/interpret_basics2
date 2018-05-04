@@ -254,7 +254,8 @@ def run_batches(f_walker, getter,
             for wp in walked.patterns:
                 rt = rule_tester(data_container=data_container,
                 rule=wp,
-                sample_instances=encoder.transform(sample_instances))
+                sample_instances=sample_instances)
+                rt.sample_instances = encoder.transform(rt.sample_instances)
                 idx = rt.apply_rule()
                 covered = p_count_corrected(sample_labels[idx], [i for i in range(len(data_container.class_names))])['counts']
                 not_covered = p_count_corrected(sample_labels[~idx], [i for i in range(len(data_container.class_names))])['counts']
@@ -501,7 +502,8 @@ def experiment(get_dataset, n_instances, n_batches,
             rt = rule_tester(data_container=mydata, rule=rule,
                                 sample_instances=instances)
             rt.sample_instances, rt.sample_labels = rt.bootstrap_pred(prediction_model=enc_rf, instances=instances)
-            rt.sample_instances = tt['encoder'].transform(rt.sample_instances)
+            if tt['encoder'] is not None:
+                rt.sample_instances = tt['encoder'].transform(rt.sample_instances)
             eval_rule = rt.evaluate_rule()
 
             tt_prec = eval_rule['post'][tc]
