@@ -692,30 +692,29 @@ class loo_encoder:
     def __init__(self, sample_instances, sample_labels, encoder=None):
         self.sample_instances = sample_instances
         self.sample_labels = sample_labels
-        self.encoder = encoder
+        if encoder is None:
+            self.encoder = default_encoder
+        else:
+            self.encoder = encoder
 
     # leave one out by instance_id and encode the rest
     def loo_encode(self, instance_id):
         instances = self.sample_instances.drop(instance_id)
         labels = self.sample_labels.drop(instance_id)
-        if self.encoder is None:
-            enc_instances = sparse.csr_matrix(instances)
-        else:
-            enc_instances = self.encoder.transform(instances)
+        enc_instances = self.encoder.transform(instances)
         return(instances, enc_instances, labels)
 
 class rule_evaluator:
 
     def encode_pred(self, prediction_model, instances=None, bootstrap=False):
         if instances is None:
-            instances=self.instances
-        if bootstrap:
-            boot_instances = instances.sample(frac=1.0, replace=True)
-            boot_labels = Series(prediction_model.predict((boot_instances)), index=boot_instances.index)
-            return(boot_instances, boot_labels)
+            pred_instances=self.sample_instances
         else:
-            labels = Series(prediction_model.predict((instances)), index=instances.index)
-            return(instances, labels)
+            pred_instances=instances
+        if bootstrap:
+            pred_instances = pred_instances.sample(frac=1.0, replace=True)
+        pred_labels = Series(prediction_model.predict((pred_instances)), index=pred_instances.index)
+        return(pred_instances, pred_labels)
 
     def apply_rule(self, rule=None, instances=None):
         if rule is None:
@@ -1010,7 +1009,8 @@ class rule_accumulator(rule_evaluator):
                         , precis_threshold = 1.0
                         , fixed_length = None
                         , target_class=None
-                        , greedy=None):
+                        , greedy=None
+                        , bootstrap=False):
 
         # basic setup
         if stopping_param > 1 or stopping_param < 0:
@@ -1049,8 +1049,10 @@ class rule_accumulator(rule_evaluator):
             else:
                 self.target_class_label = self.get_label(self.class_col, self.target_class)
 
+        # first get all the predictions from the model
+        pred_instances, pred_labels = self.encode_pred(prediction_model, sample_instances, bootstrap=bootstrap) # what the model would predict on the training sample
+
         # prior - empty rule
-        _, pred_labels = self.encode_pred(prediction_model, sample_instances, bootstrap=False) # what the model would predict on the training sample
         p_counts = p_count_corrected(pred_labels.values, [i for i in range(len(self.class_names))])
         self.pri_and_post = np.array([p_counts['p_counts'].tolist()])
         self.pri_and_post_counts = np.array([p_counts['counts'].tolist()])
@@ -1086,9 +1088,9 @@ class rule_accumulator(rule_evaluator):
         while current_precision != 1.0 and current_precision != 0.0 and current_precision < precis_threshold and self.accumulated_points <= self.total_points * self.stopping_param and (fixed_length is None or len(self.cum_info_gain) < max(1, fixed_length) + 1):
             self.profile_iter += 1
             self.add_rule(p_total = self.stopping_param)
-            boot_instances, boot_labels = self.encode_pred(prediction_model, sample_instances, bootstrap=True)
-            eval_rule = self.evaluate_rule(instances=encoder.transform(boot_instances),
-                                            labels=boot_labels)
+            # you could add a round of bootstrapping here, but what does that do to performance
+            eval_rule = self.evaluate_rule(instances=encoder.transform(pred_instances),
+                                            labels=pred_labels)
 
             # entropy / information
             previous_entropy = current_entropy
