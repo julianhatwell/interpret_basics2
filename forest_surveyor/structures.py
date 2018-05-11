@@ -30,10 +30,13 @@ class data_container:
     , var_names = None
     , var_types = None
     , pickle_dir = ''
-    , random_state = 123
+    , random_state = None
     , spiel = ''):
         self.spiel = spiel
-        self.random_state = random_state
+        if random_state is None:
+            self.random_state = 123
+        else:
+            self.random_state = random_state
 
         self.data = data
         self.data_pre = DataFrame.copy(self.data)
@@ -301,8 +304,8 @@ class paths_container:
                 weights = [1] * len(self.patterns)
             fp_scope = self.patterns.copy()
             # to shrink the support of shorter freq_patterns
-            # formula is log(sup * (len - alpha) / len)
-            score_function = lambda x, w: (x[0], x[1], w * math.log(x[1]) * (len(x[0]) - alpha) / len(x[0]))
+            # formula is sqrt(weight) * log(sup * (len - alpha) / len)
+            score_function = lambda x, w: (x[0], x[1], math.sqrt(w) * math.log(x[1]) * (len(x[0]) - alpha) / len(x[0]))
             fp_scope = [fp for fp in map(score_function, fp_scope.items(), weights)]
             # score is now at position 2 of tuple
             self.patterns = sorted(fp_scope, key=itemgetter(2), reverse = True)
@@ -706,13 +709,15 @@ class loo_encoder:
 
 class rule_evaluator:
 
-    def encode_pred(self, prediction_model, instances=None, bootstrap=False):
+    def encode_pred(self, prediction_model, instances=None, bootstrap=False, random_state=None):
         if instances is None:
             pred_instances=self.sample_instances
         else:
             pred_instances=instances
+        if random_state is None:
+            random_state = self.random_state
         if bootstrap:
-            pred_instances = pred_instances.sample(frac=1.0, replace=True)
+            pred_instances = pred_instances.sample(frac=1.0, replace=True, random_state=random_state)
         pred_labels = Series(prediction_model.predict((pred_instances)), index=pred_instances.index)
         return(pred_instances, pred_labels)
 
@@ -811,6 +816,7 @@ class rule_tester(rule_evaluator):
         self.rule = rule
         self.sample_instances = sample_instances
         self.sample_labels = sample_labels
+        self.random_state = data_container.random_state
 
 class rule_accumulator(rule_evaluator):
 
@@ -825,6 +831,7 @@ class rule_accumulator(rule_evaluator):
             self.class_names = data_container.class_names
             self.get_label = None
 
+        self.random_state = data_container.random_state
         self.onehot_features = data_container.onehot_features
         self.onehot_dict = data_container.onehot_dict
         self.var_dict = deepcopy(data_container.var_dict)
@@ -1004,15 +1011,17 @@ class rule_accumulator(rule_evaluator):
             return(False)
 
     def profile(self, encoder, sample_instances, sample_labels, prediction_model
-                        , random_state=123
                         , stopping_param = 1
                         , precis_threshold = 1.0
                         , fixed_length = None
                         , target_class=None
                         , greedy=None
-                        , bootstrap=False):
+                        , bootstrap=False
+                        , random_state=None):
 
         # basic setup
+        if random_state is None:
+            random_state=self.random_state
         if stopping_param > 1 or stopping_param < 0:
             stopping_param = 1
             print('warning: stopping_param should be 0 <= p <= 1. Value was reset to 1')
@@ -1050,7 +1059,7 @@ class rule_accumulator(rule_evaluator):
                 self.target_class_label = self.get_label(self.class_col, self.target_class)
 
         # first get all the predictions from the model
-        pred_instances, pred_labels = self.encode_pred(prediction_model, sample_instances, bootstrap=bootstrap) # what the model would predict on the training sample
+        pred_instances, pred_labels = self.encode_pred(prediction_model, sample_instances, bootstrap=bootstrap, random_state=random_state) # what the model would predict on the training sample
 
         # prior - empty rule
         p_counts = p_count_corrected(pred_labels.values, [i for i in range(len(self.class_names))])

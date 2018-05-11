@@ -8,6 +8,7 @@ from pandas import DataFrame, Series
 from forest_surveyor import p_count, p_count_corrected
 from forest_surveyor.plotting import plot_confusion_matrix
 from forest_surveyor.structures import rule_accumulator, forest_walker, batch_getter, rule_tester, loo_encoder
+import forest_surveyor.datasets as ds
 from forest_surveyor.mp_callable import mp_run_rf
 from scipy.stats import chi2_contingency
 from math import sqrt
@@ -266,19 +267,20 @@ def run_batches(f_walker, getter,
                 weights.append(sqrt(chi2_contingency(observed=observed, correction=True)[0]))
 
             # now the patterns are scored and sorted
-            walked.set_patterns(support=support_paths, alpha=alpha_paths, sort=True, weights=weights)
+            walked.set_patterns(support=support_paths, alpha=alpha_paths, sort=True, weights=weights) # with chi2 and support sorting
+            # walked.set_patterns(support=support_paths, alpha=alpha_paths, sort=True) # with only support sorting
 
             # grow a maximal rule from the freq patts
-            ra = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
-            ra.prune_rule()
+            # ra = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
+            # ra.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
+            # ra.prune_rule()
 
             # score the rule at each additional term
-            _, score1, score2 = ra.score_rule(alpha=alpha_scores) # not the same as the paths alpha, only affects score one
-            adj_max_score1 = np.max(score1[ra.isolation_pos:])
-            score1_loc = np.where(np.array(score1 == adj_max_score1))[0][0]
-            adj_max_score2 = np.max(score2[ra.isolation_pos:])
-            score2_loc = np.where(np.array(score2 == adj_max_score2))[0][0]
+            # _, score1, score2 = ra.score_rule(alpha=alpha_scores) # not the same as the paths alpha, only affects score one
+            # adj_max_score1 = np.max(score1[ra.isolation_pos:])
+            # score1_loc = np.where(np.array(score1 == adj_max_score1))[0][0]
+            # adj_max_score2 = np.max(score2[ra.isolation_pos:])
+            # score2_loc = np.where(np.array(score2 == adj_max_score2))[0][0]
 
             # re-run the profile to the best scoring fixed length
             # ra_best1 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
@@ -287,11 +289,11 @@ def run_batches(f_walker, getter,
             # ra_best1_lite = ra_best1.lite_instance()
             # del ra_best1
 
-            ra_best2 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra_best2.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=score2_loc, prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
-            ra_best2.prune_rule()
-            ra_best2_lite = ra_best2.lite_instance()
-            del ra_best2
+            # ra_best2 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
+            # ra_best2.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=score2_loc, prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
+            # ra_best2.prune_rule()
+            # ra_best2_lite = ra_best2.lite_instance()
+            # del ra_best2
 
             # re-run the profile to penultimate by instability/misclassification = 0
             # ra_pen = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
@@ -302,10 +304,10 @@ def run_batches(f_walker, getter,
 
             # re-run the profile to greedy precis
             ra_gprec = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra_gprec.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='precision', prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
+            ra_gprec.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, greedy='precision', prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
             ra_gprec.prune_rule()
             ra_gprec_lite = ra_gprec.lite_instance()
-            del ra_gprec
+            # del ra_gprec
 
             # re-run the profile to greedy plaus
             # ra_gplaus = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
@@ -315,11 +317,11 @@ def run_batches(f_walker, getter,
             # del ra_gplaus
 
             # re-run the profile to greedy f1
-            ra_gf1 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra_gf1.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='f1', prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
-            ra_gf1.prune_rule()
-            ra_gf1_lite = ra_gf1.lite_instance()
-            del ra_gf1
+            # ra_gf1 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
+            # ra_gf1.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='f1', prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
+            # ra_gf1.prune_rule()
+            # ra_gf1_lite = ra_gf1.lite_instance()
+            # del ra_gf1
 
             # re-run the profile to greedy accu
             # ra_gaccu = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
@@ -337,10 +339,10 @@ def run_batches(f_walker, getter,
 
             # collect results
             # results[b * batch_size + i] = [ra_best1_lite, ra_best2_lite, ra_gprec_lite, ra_gplaus_lite, ra_gf1_lite, ra_gaccu_lite, ra_gchi2_lite, ra_pen_lite, ra.lite_instance()]
-            results[b * batch_size + i] = [ra_best2_lite, ra_gprec_lite, ra_gf1_lite, ra.lite_instance()]
+            results[b * batch_size + i] = [ra_gprec_lite]
 
         # saving a full rule_accumulator object at the end of each batch, for plotting etc
-        sample_rule_accs[b] = ra
+        sample_rule_accs[b] = ra_gprec # used to be ra
         # report progress
         print('done batch ' + str(b))
 
@@ -349,11 +351,11 @@ def run_batches(f_walker, getter,
     results_store.close()
 
     # result_sets = ['score_fun1', 'score_fun2', 'greedy_prec', 'greedy_plaus', 'greedy_f1', 'greedy_accu', 'greedy_chisq', 'penultimate', 'exhaustive']
-    result_sets = ['score_fun2', 'greedy_prec', 'greedy_f1', 'exhaustive']
+    result_sets = ['greedy_prec']
     return(sample_rule_accs, results, result_sets)
 
-def anchors_preproc(get_data):
-    mydata = get_data()
+def anchors_preproc(get_data, random_state):
+    mydata = get_data(random_state)
     tt = mydata.tt_split()
 
     # mappings for anchors
@@ -390,6 +392,7 @@ def anchors_explanation(instance, explainer, forest, random_state=123, threshold
     return(exp)
 
 def experiment(get_dataset, n_instances, n_batches,
+ random_state=123,
  support_paths=0.1,
  alpha_paths=0.5,
  disc_path_bins=4,
@@ -403,7 +406,7 @@ def experiment(get_dataset, n_instances, n_batches,
     print('LOADING NEW DATA SET.')
     print()
     # load a data set
-    mydata = get_dataset()
+    mydata = get_dataset(random_state=random_state)
 
     # train test split
     tt = mydata.tt_split()
@@ -491,7 +494,7 @@ def experiment(get_dataset, n_instances, n_batches,
                 'total coverage(tr)',
                 'precision(tt)', 'recall(tt)', 'f1(tt)',
                 'accuracy(tt)', 'plausibility(tt)', 'lift(tt)',
-                'total coverage(tt)']
+                'total coverage(tt)', 'model_acc', 'model_ck']
     output = [[]] * len(results) * len(result_sets)
 
     # get all the label predictions done
@@ -561,7 +564,9 @@ def experiment(get_dataset, n_instances, n_batches,
                     tt_acc,
                     tt_plaus,
                     tt_lift,
-                    tt_coverage]
+                    tt_coverage,
+                    acc,
+                    coka]
     end_time = timeit.default_timer()
     elapsed_time = end_time - start_time
     print('Results Completed at: ' + time.asctime(time.gmtime()) + '. Elapsed time (seconds) = ' + str(elapsed_time))
@@ -573,7 +578,7 @@ def experiment(get_dataset, n_instances, n_batches,
         start_time = timeit.default_timer()
         print()
         instance_ids = tt['X_test'].index.tolist() # record of row indices will be lost after preproc
-        mydata, tt, explainer = anchors_preproc(get_dataset)
+        mydata, tt, explainer = anchors_preproc(get_dataset, random_state)
 
         rf, enc_rf = train_rf(tt['X_train_enc'], y=tt['y_train'],
         params=params,
@@ -719,7 +724,9 @@ def experiment(get_dataset, n_instances, n_batches,
                                 tt_acc,
                                 tt_plaus,
                                 tt_lift,
-                                tt_coverage]
+                                tt_coverage,
+                                acc,
+                                coka]
 
         output = np.concatenate((output, output_anch), axis=0)
         end_time = timeit.default_timer()
@@ -728,7 +735,7 @@ def experiment(get_dataset, n_instances, n_batches,
 
     print()
     output_df = DataFrame(output, columns=headers)
-    output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '.csv'))
+    output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '_ranst_' + str(random_state) + '_sp_' + str(support_paths) + '_ap_' + str(alpha_paths) + '_as_' + str(alpha_scores) + '.csv'))
     print('Results saved at ' + mydata.pickle_path('results.pickle'))
     print()
     print('To retrieve results execute the following:')
@@ -737,6 +744,43 @@ def experiment(get_dataset, n_instances, n_batches,
     print('results_store.close()')
     print()
     return(rule_acc, results, output_df)
+
+def grid_experiment(n_instances,
+                n_batches,
+                random_state=123,
+                support_paths=0.05,
+                alpha_paths=0.5,
+                alpha_scores=0.75,
+                which_trees='majority',
+                precis_threshold=0.95,
+                eval_model=True,
+                run_anchors=True):
+    for dataset in [
+#                 ds.accident_small_samp_data,
+                ds.adult_small_samp_data,
+                ds.bankmark_samp_data,
+                ds.car_data,
+                ds.cardiotography_data,
+                ds.credit_data,
+                ds.german_data,
+                ds.lending_tiny_samp_data,
+                ds.nursery_samp_data,
+                ds.rcdv_samp_data
+               ]:
+
+# for dataset in [ds.rcdv_samp_data]:
+        rule_acc, results, output_df = experiment(dataset,
+                        n_instances=n_instances,
+                        n_batches=n_batches,
+                        random_state=random_state,
+                        support_paths=support_paths,
+                        alpha_paths=alpha_paths,
+                        alpha_scores=alpha_scores,
+                        which_trees=which_trees,
+                        precis_threshold=precis_threshold,
+                        eval_model=eval_model,
+                        run_anchors=run_anchors
+                            )
 
 
 # print to screen (controlled by input parameter) will show full results, not just major class

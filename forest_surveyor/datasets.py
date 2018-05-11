@@ -6,14 +6,14 @@ from forest_surveyor import config as cfg
 from forest_surveyor.structures import data_container
 
 # accident
-def accident_data():
+def accident_data(random_state=123):
 
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'accident.csv.gz',
                         compression='gzip'),
     class_col = 'Accident_Severity',
     pickle_dir = 'accident_pickles',
-    random_state=123,
+    random_state=random_state,
     spiel = '''
     Data Set Information:
     These files provide detailed road safety data about the circumstances of personal injury road accidents in GB from 1979, the types (including Make and Model) of vehicles involved and the consequential casualties. The statistics relate only to personal injury accidents on public roads that are reported to the police, and subsequently recorded, using the STATS19 accident reporting form.
@@ -33,14 +33,14 @@ def accident_data():
     return(data_cont)
 
 # accident sample: 0.1
-def accident_samp_data():
+def accident_samp_data(random_state=123):
 
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'accident_samp.csv.gz',
                         compression='gzip'),
     class_col = 'Accident_Severity',
     pickle_dir = 'accident_samp_pickles',
-    random_state=123,
+    random_state=random_state,
     spiel = '''
     Data Set Information:
     These files provide detailed road safety data about the circumstances of personal injury road accidents in GB from 1979, the types (including Make and Model) of vehicles involved and the consequential casualties. The statistics relate only to personal injury accidents on public roads that are reported to the police, and subsequently recorded, using the STATS19 accident reporting form.
@@ -60,14 +60,14 @@ def accident_samp_data():
     return(data_cont)
 
 # accident small sample: 0.01
-def accident_small_samp_data():
+def accident_small_samp_data(random_state=123):
 
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'accident_small_samp.csv.gz',
                         compression='gzip'),
     class_col = 'Accident_Severity',
     pickle_dir = 'accident_small_samp_pickles',
-    random_state=123,
+    random_state=random_state,
     spiel = '''
     Data Set Information:
     These files provide detailed road safety data about the circumstances of personal injury road accidents in GB from 1979, the types (including Make and Model) of vehicles involved and the consequential casualties. The statistics relate only to personal injury accidents on public roads that are reported to the police, and subsequently recorded, using the STATS19 accident reporting form.
@@ -87,13 +87,13 @@ def accident_small_samp_data():
     return(data_cont)
 
 # adult
-def adult_data():
+def adult_data(random_state=123):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'adult.csv.gz',
                         compression='gzip'),
     class_col = 'income',
     pickle_dir = 'adult_pickles',
-    random_state=123,
+    random_state=random_state,
     spiel = '''
     Data Description:
     This data was extracted from the adult bureau database found at
@@ -116,13 +116,13 @@ def adult_data():
     return(data_cont)
 
 # adult sample: 0.25
-def adult_samp_data():
+def adult_samp_data(random_state=123):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'adult_samp.csv.gz',
                         compression='gzip'),
     class_col = 'income',
     pickle_dir = 'adult_samp_pickles',
-    random_state=123,
+    random_state=random_state,
     spiel = '''
     Data Description:
     This data was extracted from the adult bureau database found at
@@ -145,13 +145,13 @@ def adult_samp_data():
     return(data_cont)
 
 # adult sample: 0.025
-def adult_small_samp_data():
+def adult_small_samp_data(random_state=123):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'adult_small_samp.csv.gz',
                         compression='gzip'),
     class_col = 'income',
     pickle_dir = 'adult_small_samp_pickles',
-    random_state=123,
+    random_state=random_state,
     spiel = '''
     Data Description:
     This data was extracted from the adult bureau database found at
@@ -174,7 +174,7 @@ def adult_small_samp_data():
     return(data_cont)
 
 # bank marketing
-def bankmark_data():
+def bankmark_data(random_state=123):
 
     vtypes = {'age': np.int16,
      'campaign': np.int16,
@@ -204,7 +204,7 @@ def bankmark_data():
                         dtype=vtypes),
     class_col = 'y',
     pickle_dir = 'bankmark_pickles',
-    random_state=123,
+    random_state=random_state,
     spiel = '''
     Data Set Information:
     The data is related with direct marketing campaigns of a Portuguese banking institution. The marketing campaigns were based on phone calls. Often, more than one contact to the same client was required, in order to access if the product (bank term deposit) would be ('yes') or not ('no') subscribed.
@@ -253,7 +253,7 @@ def bankmark_data():
     return(data_cont)
 
 # bank marketing sample: 0.05
-def bankmark_samp_data():
+def bankmark_samp_data(random_state=123):
 
     vtypes = {'age': np.int16,
      'campaign': np.int16,
@@ -283,7 +283,7 @@ def bankmark_samp_data():
                         dtype=vtypes),
     class_col = 'y',
     pickle_dir = 'bankmark_samp_pickles',
-    random_state=123,
+    random_state=random_state,
     spiel = '''
     Data Set Information:
     The data is related with direct marketing campaigns of a Portuguese banking institution. The marketing campaigns were based on phone calls. Often, more than one contact to the same client was required, in order to access if the product (bank term deposit) would be ('yes') or not ('no') subscribed.
@@ -332,7 +332,7 @@ def bankmark_samp_data():
     return(data_cont)
 
 # car
-def car_data():
+def car_data(random_state=123):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'car.csv.gz',
                         compression='gzip'),
@@ -345,7 +345,7 @@ def car_data():
                 , 'safety'
                 , 'acceptability'],
     pickle_dir = 'car_pickles',
-    random_state=123,
+    random_state=random_state,
     spiel = '''
     M. Bohanec and V. Rajkovic: Knowledge acquisition and explanation for
     multi-attribute decision making. In 8th Intl Workshop on Expert
@@ -362,13 +362,13 @@ def car_data():
     return(data_cont)
 
 # cardiotography
-def cardiotography_data():
+def cardiotography_data(random_state=123):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'cardiotography.csv.gz',
                         compression='gzip'),
     class_col = 'NSP',
     pickle_dir = 'cardiotography_pickles',
-    random_state=123,
+    random_state=random_state,
     spiel = '''
     Data Set Information:
     2126 fetal cardiotocograms (CTGs) were automatically processed and the respective diagnostic features measured. The CTGs were also classified by three expert obstetricians and a consensus classification label assigned to each of them. Classification was both with respect to a morphologic pattern (A, B, C. ...) and to a fetal state (N, S, P). Therefore the dataset can be used either for 10-class or 3-class experiments.
@@ -402,13 +402,13 @@ def cardiotography_data():
     return(data_cont)
 
 # credit
-def credit_data():
+def credit_data(random_state=123):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'credit.csv.gz',
                     compression='gzip'),
     class_col = 'A16',
     pickle_dir = 'credit_pickles',
-    random_state=123,
+    random_state=random_state,
     spiel = '''
     Data Set Information:
 
@@ -439,13 +439,13 @@ def credit_data():
     return(data_cont)
 
 # german
-def german_data():
+def german_data(random_state=123):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'german.csv.gz',
                     compression='gzip'),
     class_col = 'rating',
     pickle_dir = 'german_pickles',
-    random_state=123,
+    random_state=random_state,
     spiel = '''
     Source:
     Professor Dr. Hans Hofmann
@@ -474,13 +474,13 @@ def german_data():
     return(data_cont)
 
 # lending
-def lending_data():
+def lending_data(random_state=123):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'lending.csv.gz',
                     compression='gzip'),
     class_col = 'loan_status',
     pickle_dir = 'lending_pickles',
-    random_state=123,
+    random_state=random_state,
     spiel = '''
     Data Set Information:
     Orignates from: https://www.lendingclub.com/info/download-data.action
@@ -494,13 +494,13 @@ def lending_data():
     return(data_cont)
 
 # lending sample: 0.1
-def lending_samp_data():
+def lending_samp_data(random_state=123):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'lending_samp.csv.gz',
                     compression='gzip'),
     class_col = 'loan_status',
     pickle_dir = 'lending_samp_pickles',
-    random_state=123,
+    random_state=random_state,
     spiel = '''
     Data Set Information:
     Orignates from: https://www.lendingclub.com/info/download-data.action
@@ -514,13 +514,13 @@ def lending_samp_data():
     return(data_cont)
 
 # lending small sample: 0.01
-def lending_small_samp_data():
+def lending_small_samp_data(random_state=123):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'lending_small_samp.csv.gz',
                     compression='gzip'),
     class_col = 'loan_status',
     pickle_dir = 'lending_small_samp_pickles',
-    random_state=123,
+    random_state=random_state,
     spiel = '''
     Data Set Information:
     Orignates from: https://www.lendingclub.com/info/download-data.action
@@ -534,13 +534,13 @@ def lending_small_samp_data():
     return(data_cont)
 
 # lending tiny sample: 0.0025
-def lending_tiny_samp_data():
+def lending_tiny_samp_data(random_state=123):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'lending_tiny_samp.csv.gz',
                     compression='gzip'),
     class_col = 'loan_status',
     pickle_dir = 'lending_tiny_samp_pickles',
-    random_state=123,
+    random_state=random_state,
     spiel = '''
     Data Set Information:
     Orignates from: https://www.lendingclub.com/info/download-data.action
@@ -554,13 +554,13 @@ def lending_tiny_samp_data():
     return(data_cont)
 
 # nursery
-def nursery_data():
+def nursery_data(random_state=123):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'nursery.csv.gz',
                     compression='gzip'),
     class_col = 'decision',
     pickle_dir = 'nursery_pickles',
-    random_state=123,
+    random_state=random_state,
     spiel = '''
     Data Description:
     Nursery Database was derived from a hierarchical decision model
@@ -579,13 +579,13 @@ def nursery_data():
     return(data_cont)
 
 # nursery sample: 0.2
-def nursery_samp_data():
+def nursery_samp_data(random_state=123):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'nursery_samp.csv.gz',
                     compression='gzip'),
     class_col = 'decision',
     pickle_dir = 'nursery_samp_pickles',
-    random_state=123,
+    random_state=random_state,
     spiel = '''
     Data Description:
     Nursery Database was derived from a hierarchical decision model
@@ -604,13 +604,13 @@ def nursery_samp_data():
     return(data_cont)
 
 # rcdv
-def rcdv_data():
+def rcdv_data(random_state=123):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'rcdv.csv.gz',
                     compression='gzip'),
     class_col = 'recid',
     pickle_dir = 'rcdv_pickles',
-    random_state=123,
+    random_state=random_state,
     spiel = '''
     Data Set Information:
     This is a description of the data on the file, DATA1978.
@@ -657,13 +657,13 @@ def rcdv_data():
     return(data_cont)
 
 # rcdv sample: 0.1
-def rcdv_samp_data():
+def rcdv_samp_data(random_state=123):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'rcdv_samp.csv.gz',
                     compression='gzip'),
     class_col = 'recid',
     pickle_dir = 'rcdv_samp_pickles',
-    random_state=123,
+    random_state=random_state,
     spiel = '''
     Data Set Information:
     This is a description of the data on the file, DATA1978.
