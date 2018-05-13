@@ -69,58 +69,66 @@ def tune_rf_mp(X, y, grid = None, random_state=123, save_path = None):
                                             ascending=[False, True, True, False])
     return(params)
 
-def tune_rf(X, y, grid = None, random_state=123, save_path = None):
+def do_tuning(X, y, grid = None, random_state=123, save_path = None):
+    if grid is None:
+        grid = ParameterGrid({
+            'n_estimators': [(i + 1) * 500 for i in range(3)]
+            , 'max_depth' : [i for i in [8, 16]]
+            , 'min_samples_leaf' : [1, 5]
+            })
+
+    start_time = timeit.default_timer()
+
+    rf = RandomForestClassifier()
+    params = []
+    best_score = 0
+
+    print(str(len(grid)) + ' runs to do')
+    print()
+    for g in grid:
+        print('starting new run at: ' + time.asctime(time.gmtime()))
+        print(g)
+        tree_start_time = timeit.default_timer()
+        rf.set_params(oob_score = True, random_state=random_state, **g)
+        rf.fit(X, y)
+        tree_end_time = timeit.default_timer()
+        g['elapsed_time'] = tree_end_time - tree_start_time
+        g['score'] = rf.oob_score_
+        print('ending run at: ' + time.asctime(time.gmtime()))
+        params.append(g)
+        print('completed ' + str(len(params)) + ' run(s)')
+        print()
+        if rf.oob_score_ > best_score:
+            best_score = rf.oob_score_
+            best_grid = g
+
+    elapsed = timeit.default_timer() - start_time
+    print('Time elapsed:', "{:0.4f}".format(elapsed), 'seconds')
+
+    if save_path is not None:
+        with open(save_path + 'params.json', 'w') as outfile:
+            json.dump(params, outfile)
+
+    params = DataFrame(params).sort_values(['score','n_estimators','max_depth','min_samples_leaf'],
+                                            ascending=[False, True, True, False])
+    return(params)
+
+def tune_rf(X, y, grid = None, random_state=123, save_path = None, override_tuning=False):
 
     # to do - test allowable structure of grid input
-    try:
-        with open(save_path + 'params.json', 'r') as infile:
-            params = json.load(infile)
-        print('Using existing params file. To re-tune, delete file at ' + save_path + 'params.json')
-        print()
-        return(params)
-    except:
-        if grid is None:
-            grid = ParameterGrid({
-                'n_estimators': [(i + 1) * 500 for i in range(3)]
-                , 'max_depth' : [i for i in [8, 16]]
-                , 'min_samples_leaf' : [1, 5]
-                })
-
-        start_time = timeit.default_timer()
-
-        rf = RandomForestClassifier()
-        params = []
-        best_score = 0
-
-        print(str(len(grid)) + ' runs to do')
-        print()
-        for g in grid:
-            print('starting new run at: ' + time.asctime(time.gmtime()))
-            print(g)
-            tree_start_time = timeit.default_timer()
-            rf.set_params(oob_score = True, random_state=random_state, **g)
-            rf.fit(X, y)
-            tree_end_time = timeit.default_timer()
-            g['elapsed_time'] = tree_end_time - tree_start_time
-            g['score'] = rf.oob_score_
-            print('ending run at: ' + time.asctime(time.gmtime()))
-            params.append(g)
-            print('completed ' + str(len(params)) + ' run(s)')
+    if override_tuning:
+        params = do_tuning(X, y, grid=grid, random_state=random_state, save_path=save_path)
+    else:
+        try:
+            with open(save_path + 'params.json', 'r') as infile:
+                params = json.load(infile)
+            print('Using existing params file. To re-tune, delete file at ' + save_path + 'params.json')
             print()
-            if rf.oob_score_ > best_score:
-                best_score = rf.oob_score_
-                best_grid = g
+            return(params)
+        except:
+            params = do_tuning(X, y, grid=grid, random_state=random_state, save_path=save_path)
 
-        elapsed = timeit.default_timer() - start_time
-        print('Time elapsed:', "{:0.4f}".format(elapsed), 'seconds')
-
-        if save_path is not None:
-            with open(save_path + 'params.json', 'w') as outfile:
-                json.dump(params, outfile)
-
-        params = DataFrame(params).sort_values(['score','n_estimators','max_depth','min_samples_leaf'],
-                                                ascending=[False, True, True, False])
-        return(params)
+    return(params)
 
 def train_rf(X, y, params = None, encoder = None, random_state = 123):
 
@@ -393,6 +401,7 @@ def anchors_explanation(instance, explainer, forest, random_state=123, threshold
 
 def experiment(get_dataset, n_instances, n_batches,
  random_state=123,
+ override_tuning=False,
  support_paths=0.1,
  alpha_paths=0.5,
  disc_path_bins=4,
@@ -419,7 +428,8 @@ def experiment(get_dataset, n_instances, n_batches,
     print()
     params = tune_rf(tt['X_train_enc'], tt['y_train'],
      save_path = mydata.pickle_path(),
-     random_state=mydata.random_state)
+     random_state=mydata.random_state,
+     override_tuning=override_tuning)
 
     #####################################################
 
@@ -605,6 +615,7 @@ def experiment(get_dataset, n_instances, n_batches,
             # Get test examples where the anchor applies
             fit_anchor_train = np.where(np.all(tt['X_train'][:, exp.features()] == instance[exp.features()], axis=1))[0]
             fit_anchor_test = np.where(np.all(tt['X_test'][:, exp.features()] == instance[exp.features()], axis=1))[0]
+            fit_anchor_test = [fat for fat in fit_anchor_test if fat != i] # exclude current instance
 
             # train
             priors = p_count_corrected(tt['y_train'], [i for i in range(len(mydata.class_names))])
@@ -735,7 +746,7 @@ def experiment(get_dataset, n_instances, n_batches,
 
     print()
     output_df = DataFrame(output, columns=headers)
-    output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '_ranst_' + str(random_state) + '_sp_' + str(support_paths) + '_ap_' + str(alpha_paths) + '_as_' + str(alpha_scores) + '.csv'))
+    output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '_rnst_' + str(random_state) + '_sp_' + str(support_paths) + '_ap_' + str(alpha_paths) + '_as_' + str(alpha_scores) + '_pr_' + str(precis_threshold) + '.csv'))
     print('Results saved at ' + mydata.pickle_path('results.pickle'))
     print()
     print('To retrieve results execute the following:')
@@ -748,6 +759,7 @@ def experiment(get_dataset, n_instances, n_batches,
 def grid_experiment(n_instances,
                 n_batches,
                 random_state=123,
+                override_tuning=False,
                 support_paths=0.05,
                 alpha_paths=0.5,
                 alpha_scores=0.75,
@@ -773,6 +785,7 @@ def grid_experiment(n_instances,
                         n_instances=n_instances,
                         n_batches=n_batches,
                         random_state=random_state,
+                        override_tuning=override_tuning,
                         support_paths=support_paths,
                         alpha_paths=alpha_paths,
                         alpha_scores=alpha_scores,
