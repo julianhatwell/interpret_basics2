@@ -8,7 +8,6 @@ from pandas import DataFrame, Series
 from forest_surveyor import p_count, p_count_corrected
 from forest_surveyor.plotting import plot_confusion_matrix
 from forest_surveyor.structures import rule_accumulator, forest_walker, batch_getter, rule_tester, loo_encoder
-import forest_surveyor.datasets as ds
 from forest_surveyor.mp_callable import mp_run_rf
 from scipy.stats import chi2_contingency
 from math import sqrt
@@ -139,7 +138,7 @@ def train_rf(X, y, params = None, encoder = None, random_state = 123):
         # get the best params
         best_grid = params.loc[params['score'].idxmax()]
         best_params = {k: int(v) for k, v in best_grid.items() if k not in ('score', 'elapsed_time')}
-        print("Best OOB Cohen's Kappa during tuning: " "{:0.4f}".format(best_grid.score))
+        print("Best OOB Accuracy Estimate during tuning: " "{:0.4f}".format(best_grid.score))
         print("Best parameters:", best_params)
         print()
         print("Training a random forest model using best parameters... (please wait)")
@@ -272,7 +271,12 @@ def run_batches(f_walker, getter,
                 covered = p_count_corrected(sample_labels[idx], [i for i in range(len(data_container.class_names))])['counts']
                 not_covered = p_count_corrected(sample_labels[~idx], [i for i in range(len(data_container.class_names))])['counts']
                 observed = np.array((covered, not_covered))
-                weights.append(sqrt(chi2_contingency(observed=observed, correction=True)[0]))
+                # weights.append(sqrt(chi2_contingency(observed=observed, correction=True)[0]))
+
+                if covered.sum() > 0 and not_covered.sum() > 0: # previous_counts.sum() == 0 is impossible
+                    weights.append(sqrt(chi2_contingency(observed=observed[:, np.where(observed.sum(axis=0) != 0)], correction=True)[0]))
+                else:
+                    weights.append(min(weights))
 
             # now the patterns are scored and sorted
             walked.set_patterns(support=support_paths, alpha=alpha_paths, sort=True, weights=weights) # with chi2 and support sorting
@@ -756,7 +760,8 @@ def experiment(get_dataset, n_instances, n_batches,
     print()
     return(rule_acc, results, output_df)
 
-def grid_experiment(n_instances,
+def grid_experiment(dsets,
+                n_instances,
                 n_batches,
                 random_state=123,
                 override_tuning=False,
@@ -767,20 +772,8 @@ def grid_experiment(n_instances,
                 precis_threshold=0.95,
                 eval_model=True,
                 run_anchors=True):
-    for dataset in [
-#                 ds.accident_small_samp_data,
-                ds.adult_small_samp_data,
-                ds.bankmark_samp_data,
-                ds.car_data,
-                ds.cardiotography_data,
-                ds.credit_data,
-                ds.german_data,
-                ds.lending_tiny_samp_data,
-                ds.nursery_samp_data,
-                ds.rcdv_samp_data
-               ]:
 
-# for dataset in [ds.rcdv_samp_data]:
+    for dataset in dsets:
         rule_acc, results, output_df = experiment(dataset,
                         n_instances=n_instances,
                         n_batches=n_batches,
