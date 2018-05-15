@@ -276,7 +276,7 @@ def run_batches(f_walker, getter,
                 if covered.sum() > 0 and not_covered.sum() > 0: # previous_counts.sum() == 0 is impossible
                     weights.append(sqrt(chi2_contingency(observed=observed[:, np.where(observed.sum(axis=0) != 0)], correction=True)[0]))
                 else:
-                    weights.append(min(weights))
+                    weights.append(max(weights))
 
             # now the patterns are scored and sorted
             walked.set_patterns(support=support_paths, alpha=alpha_paths, sort=True, weights=weights) # with chi2 and support sorting
