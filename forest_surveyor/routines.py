@@ -508,7 +508,8 @@ def experiment(get_dataset, n_instances, n_batches,
                 'total coverage(tr)',
                 'precision(tt)', 'recall(tt)', 'f1(tt)',
                 'accuracy(tt)', 'plausibility(tt)', 'lift(tt)',
-                'total coverage(tt)', 'model_acc', 'model_ck']
+                'total coverage(tt)', 'model_acc', 'model_ck',
+                'inst_time']
     output = [[]] * len(results) * len(result_sets)
 
     # get all the label predictions done
@@ -580,7 +581,8 @@ def experiment(get_dataset, n_instances, n_batches,
                     tt_lift,
                     tt_coverage,
                     acc,
-                    coka]
+                    coka,
+                    timeit.default_timer() - start_time]
     end_time = timeit.default_timer()
     elapsed_time = end_time - start_time
     print('Results Completed at: ' + time.asctime(time.gmtime()) + '. Elapsed time (seconds) = ' + str(elapsed_time))
@@ -741,7 +743,8 @@ def experiment(get_dataset, n_instances, n_batches,
                                 tt_lift,
                                 tt_coverage,
                                 acc,
-                                coka]
+                                coka,
+                                timeit.default_timer() - start_time]
 
         output = np.concatenate((output, output_anch), axis=0)
         end_time = timeit.default_timer()
@@ -750,7 +753,7 @@ def experiment(get_dataset, n_instances, n_batches,
 
     print()
     output_df = DataFrame(output, columns=headers)
-    output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '_rnst_' + str(random_state) + '_sp_' + str(support_paths) + '_ap_' + str(alpha_paths) + '_as_' + str(alpha_scores) + '_pr_' + str(precis_threshold) + '.csv'))
+    output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '_rnst_' + str(random_state) + '_sp_' + str(support_paths) + '_ap_' + str(alpha_paths) + '_as_' + str(alpha_scores) + '_pr_' + str(precis_threshold) + '_timetest.csv'))
     print('Results saved at ' + mydata.pickle_path('results.pickle'))
     print()
     print('To retrieve results execute the following:')
@@ -761,33 +764,24 @@ def experiment(get_dataset, n_instances, n_batches,
     return(rule_acc, results, output_df)
 
 def grid_experiment(dsets,
-                n_instances,
-                n_batches,
-                random_state=123,
-                override_tuning=False,
-                support_paths=0.05,
-                alpha_paths=0.5,
-                alpha_scores=0.75,
-                which_trees='majority',
-                precis_threshold=0.95,
-                eval_model=True,
-                run_anchors=True):
+                exp_grid):
 
-    for dataset in dsets:
-        rule_acc, results, output_df = experiment(dataset,
-                        n_instances=n_instances,
-                        n_batches=n_batches,
-                        random_state=random_state,
-                        override_tuning=override_tuning,
-                        support_paths=support_paths,
-                        alpha_paths=alpha_paths,
-                        alpha_scores=alpha_scores,
-                        which_trees=which_trees,
-                        precis_threshold=precis_threshold,
-                        eval_model=eval_model,
-                        run_anchors=run_anchors
-                            )
+    for eg in exp_grid.index:
+        print(exp_grid.loc[eg])
 
+        for dataset in dsets:
+            rule_acc, results, output_df = experiment(dataset,
+                            random_state=exp_grid.loc[eg]['random_state'],
+                            n_instances=exp_grid.loc[eg]['n_instances'],
+                            n_batches=exp_grid.loc[eg]['n_batches'],
+                            eval_model=exp_grid.loc[eg]['eval_model'],
+                            override_tuning=exp_grid.loc[eg]['override_tuning'],
+                            support_paths=exp_grid.loc[eg]['support_paths'],
+                            alpha_paths=exp_grid.loc[eg]['alpha_paths'],
+                            alpha_scores=exp_grid.loc[eg]['alpha_scores'],
+                            precis_threshold=exp_grid.loc[eg]['precis_threshold'],
+                            run_anchors=exp_grid.loc[eg]['run_anchors'],
+                            which_trees=exp_grid.loc[eg]['which_trees'])
 
 # print to screen (controlled by input parameter) will show full results, not just major class
 # output_results=False
