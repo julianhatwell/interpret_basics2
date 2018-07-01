@@ -97,51 +97,49 @@ def do_tuning(X, y, grid = None, random_state=123, save_path = None):
         params.append(g)
         print('completed ' + str(len(params)) + ' run(s)')
         print()
-        if rf.oob_score_ > best_score:
-            best_score = rf.oob_score_
-            best_grid = g
 
     elapsed = timeit.default_timer() - start_time
     print('Time elapsed:', "{:0.4f}".format(elapsed), 'seconds')
 
-    if save_path is not None:
-        with open(save_path + 'params.json', 'w') as outfile:
-            json.dump(params, outfile)
-
     params = DataFrame(params).sort_values(['score','n_estimators','max_depth','min_samples_leaf'],
-                                            ascending=[False, True, True, False])
-    return(params)
+                                        ascending=[False, True, True, False])
+
+    best_grid = params.loc[params['score'].idxmax()]
+    best_params = {k: int(v) if k not in ('score', 'elapsed_time') else v for k, v in best_grid.items()}
+
+    if save_path is not None:
+        with open(save_path + 'best_params.json', 'w') as outfile:
+            json.dump(best_params, outfile)
+
+    return(best_params)
 
 def tune_rf(X, y, grid = None, random_state=123, save_path = None, override_tuning=False):
 
     # to do - test allowable structure of grid input
     if override_tuning:
-        params = do_tuning(X, y, grid=grid, random_state=random_state, save_path=save_path)
+        best_params = do_tuning(X, y, grid=grid, random_state=random_state, save_path=save_path)
     else:
         try:
-            with open(save_path + 'params.json', 'r') as infile:
-                params = json.load(infile)
-            print('Using existing params file. To re-tune, delete file at ' + save_path + 'params.json')
+            with open(save_path + 'best_params.json', 'r') as infile:
+                best_params = json.load(infile)
+            print('Using existing params file. To re-tune, delete file at ' + save_path + 'best_params.json')
             print()
-            return(params)
+            return(best_params)
         except:
-            params = do_tuning(X, y, grid=grid, random_state=random_state, save_path=save_path)
+            best_params = do_tuning(X, y, grid=grid, random_state=random_state, save_path=save_path)
 
-    return(params)
+    print("Best OOB Accuracy Estimate during tuning: " "{:0.4f}".format(best_params['score']))
+    print("Best parameters:", best_params)
+    print()
 
-def train_rf(X, y, params = None, encoder = None, random_state = 123):
+    return(best_params)
+
+def train_rf(X, y, best_params = None, encoder = None, random_state = 123):
 
     # to do - test allowable structure of grid input
-    if params is not None:
-        params = DataFrame(params)
-
-        # get the best params
-        best_grid = params.loc[params['score'].idxmax()]
-        best_params = {k: int(v) for k, v in best_grid.items() if k not in ('score', 'elapsed_time')}
-        print("Best OOB Accuracy Estimate during tuning: " "{:0.4f}".format(best_grid.score))
-        print("Best parameters:", best_params)
-        print()
-        print("Training a random forest model using best parameters... (please wait)")
+    if best_params is not None:
+        best_params = {k: v for k, v in best_params.items() if k not in ('score', 'elapsed_time')}
+        print("Training a random forest model using given parameters " + str(best_params) + "... (please wait)")
         rf = RandomForestClassifier(random_state=random_state, oob_score=True, **best_params)
     else:
         print("Training a random forest model using default parameters... (please wait)")
@@ -321,13 +319,6 @@ def run_batches(f_walker, getter,
             ra_gprec_lite = ra_gprec.lite_instance()
             # del ra_gprec
 
-            # re-run the profile to greedy plaus
-            # ra_gplaus = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            # ra_gplaus.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='plausibility', prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
-            # ra_gplaus.prune_rule()
-            # ra_gplaus_lite = ra_gplaus.lite_instance()
-            # del ra_gplaus
-
             # re-run the profile to greedy f1
             # ra_gf1 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
             # ra_gf1.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='f1', prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
@@ -350,7 +341,7 @@ def run_batches(f_walker, getter,
             # del ra_gchi2
 
             # collect results
-            # results[b * batch_size + i] = [ra_best1_lite, ra_best2_lite, ra_gprec_lite, ra_gplaus_lite, ra_gf1_lite, ra_gaccu_lite, ra_gchi2_lite, ra_pen_lite, ra.lite_instance()]
+            # results[b * batch_size + i] = [ra_best1_lite, ra_best2_lite, ra_gprec_lite, ra_gf1_lite, ra_gaccu_lite, ra_gchi2_lite, ra_pen_lite, ra.lite_instance()]
             results[b * batch_size + i] = [ra_gprec_lite]
 
         # saving a full rule_accumulator object at the end of each batch, for plotting etc
@@ -362,7 +353,7 @@ def run_batches(f_walker, getter,
     pickle.dump(results, results_store)
     results_store.close()
 
-    # result_sets = ['score_fun1', 'score_fun2', 'greedy_prec', 'greedy_plaus', 'greedy_f1', 'greedy_accu', 'greedy_chisq', 'penultimate', 'exhaustive']
+    # result_sets = ['score_fun1', 'score_fun2', 'greedy_prec', 'greedy_f1', 'greedy_accu', 'greedy_chisq', 'penultimate', 'exhaustive']
     result_sets = ['greedy_prec']
     return(sample_rule_accs, results, result_sets)
 
@@ -413,6 +404,7 @@ def experiment(get_dataset, n_instances, n_batches,
  alpha_scores=0.5,
  which_trees='majority',
  precis_threshold=0.95,
+ add_trees=0,
  eval_model=False,
  run_anchors=True):
 
@@ -430,16 +422,19 @@ def experiment(get_dataset, n_instances, n_batches,
 
     print('Finding best parameters for Random Forest. Checking for prior tuning parameters.')
     print()
-    params = tune_rf(tt['X_train_enc'], tt['y_train'],
+    best_params = tune_rf(tt['X_train_enc'], tt['y_train'],
      save_path = mydata.pickle_path(),
      random_state=mydata.random_state,
      override_tuning=override_tuning)
 
     #####################################################
 
+    # update best params according to expermental design
+    best_params['n_estimators'] = best_params['n_estimators'] + add_trees
+
     # train a rf model
     rf, enc_rf = train_rf(X=tt['X_train_enc'], y=tt['y_train'],
-     params=params,
+     best_params=best_params,
      encoder=tt['encoder'],
      random_state=mydata.random_state)
 
@@ -472,7 +467,7 @@ def experiment(get_dataset, n_instances, n_batches,
 
     ''')
     print('Starting new run at: ' + time.asctime(time.gmtime()) + ' with batch_size = ' + str(batch_size) + ' and n_batches = ' + str(n_batches) + '...(please wait)')
-    start_time = timeit.default_timer()
+    wb_start_time = timeit.default_timer()
 
     # rule_acc is just the last rule rule_accumulator, results are for the whole batch
     rule_acc, results, result_sets = run_batches(f_walker=f_walker,
@@ -491,12 +486,12 @@ def experiment(get_dataset, n_instances, n_batches,
      batch_size=batch_size,
      n_batches=n_batches)
 
-    end_time = timeit.default_timer()
-    elapsed_time = end_time - start_time
-    print('Done. Completed run at: ' + time.asctime(time.gmtime()) + '. Elapsed time (seconds) = ' + str(elapsed_time))
+    wb_end_time = timeit.default_timer()
+    wb_elapsed_time = wb_end_time - wb_start_time
+    print('Done. Completed run at: ' + time.asctime(time.gmtime()) + '. Elapsed time (seconds) = ' + str(wb_elapsed_time))
     print()
     print('Compiling Training Results at: ' + time.asctime(time.gmtime()) + '...(please wait)')
-    start_time = timeit.default_timer()
+    wbres_start_time = timeit.default_timer()
 
     headers = ['instance_id', 'result_set',
                 'pretty rule', 'rule length',
@@ -504,12 +499,11 @@ def experiment(get_dataset, n_instances, n_batches,
                 'target class', 'target class label',
                 'majority vote share', 'pred prior',
                 'precision(tr)', 'recall(tr)', 'f1(tr)',
-                'accuracy(tr)', 'plausibility(tr)', 'lift(tr)',
+                'accuracy(tr)', 'lift(tr)',
                 'total coverage(tr)',
                 'precision(tt)', 'recall(tt)', 'f1(tt)',
-                'accuracy(tt)', 'plausibility(tt)', 'lift(tt)',
-                'total coverage(tt)', 'model_acc', 'model_ck',
-                'inst_time']
+                'accuracy(tt)', 'lift(tt)',
+                'total coverage(tt)', 'model_acc', 'model_ck']
     output = [[]] * len(results) * len(result_sets)
 
     # get all the label predictions done
@@ -536,7 +530,6 @@ def experiment(get_dataset, n_instances, n_batches,
             tr_recall = list(reversed(results[i][j].pri_and_post_recall))[0][tc]
             tr_f1 = list(reversed(results[i][j].pri_and_post_f1))[0][tc]
             tr_acc = list(reversed(results[i][j].pri_and_post_accuracy))[0][tc]
-            tr_plaus = list(reversed(results[i][j].pri_and_post_plausibility))[0][tc]
             tr_lift = list(reversed(results[i][j].pri_and_post_lift))[0][tc]
             tr_coverage = list(reversed(results[i][j].coverage))[0]
 
@@ -552,7 +545,6 @@ def experiment(get_dataset, n_instances, n_batches,
             tt_recall = eval_rule['recall'][tc]
             tt_f1 = eval_rule['f1'][tc]
             tt_acc = eval_rule['accuracy'][tc]
-            tt_plaus = eval_rule['plausibility'][tc]
             tt_lift = eval_rule['lift'][tc]
             tt_coverage = eval_rule['coverage']
 
@@ -570,34 +562,33 @@ def experiment(get_dataset, n_instances, n_batches,
                     tr_recall,
                     tr_f1,
                     tr_acc,
-                    tr_plaus,
                     tr_lift,
                     tr_coverage,
                     tt_prec,
                     tt_recall,
                     tt_f1,
                     tt_acc,
-                    tt_plaus,
                     tt_lift,
                     tt_coverage,
                     acc,
-                    coka,
-                    timeit.default_timer() - start_time]
-    end_time = timeit.default_timer()
-    elapsed_time = end_time - start_time
-    print('Results Completed at: ' + time.asctime(time.gmtime()) + '. Elapsed time (seconds) = ' + str(elapsed_time))
+                    coka]
+
+    wbres_end_time = timeit.default_timer()
+    wbres_elapsed_time = wbres_end_time - wbres_start_time
+    print('Results Completed at: ' + time.asctime(time.gmtime()) + '. Elapsed time (seconds) = ' + str(wbres_elapsed_time))
     print('Whiteboxing Randfor Done')
     print()
+    anch_elapsed_time = None
     if run_anchors:
         print('Processing Anchors')
         print('Starting new run at: ' + time.asctime(time.gmtime()))
-        start_time = timeit.default_timer()
+        anch_start_time = timeit.default_timer()
         print()
         instance_ids = tt['X_test'].index.tolist() # record of row indices will be lost after preproc
         mydata, tt, explainer = anchors_preproc(get_dataset, random_state)
 
         rf, enc_rf = train_rf(tt['X_train_enc'], y=tt['y_train'],
-        params=params,
+        best_params=best_params,
         encoder=tt['encoder'],
         random_state=mydata.random_state)
 
@@ -654,8 +645,6 @@ def experiment(get_dataset, n_instances, n_batches,
                 rec_corrected = counts / counts.sum()
                 cov_corrected = np.array([counts.sum() / priors['counts'].sum()])
 
-            plaus = ( pos_corrected * ( rec_corrected ) ) / pri_corrected
-            plaus /= np.sum(plaus)
             lift = pos_corrected / ( ( cov_corrected ) * pri_corrected )
 
             # capture train
@@ -671,7 +660,6 @@ def experiment(get_dataset, n_instances, n_batches,
             tr_recall = recall[tc]
             tr_f1 = f1[tc]
             tr_acc = accu[tc]
-            tr_plaus = plaus[tc]
             tr_lift = lift[tc]
             tr_coverage = cover
 
@@ -706,15 +694,13 @@ def experiment(get_dataset, n_instances, n_batches,
                 rec_corrected = counts / counts.sum()
                 cov_corrected = np.array([counts.sum() / priors['counts'].sum()])
 
-            plaus = ( pos_corrected * ( rec_corrected ) ) / pri_corrected
-            plaus /= np.sum(plaus)
             lift = pos_corrected / ( ( cov_corrected ) * pri_corrected )
+
             # capture test
             tt_prec = post[tc]
             tt_recall = recall[tc]
             tt_f1 = f1[tc]
             tt_acc = accu[tc]
-            tt_plaus = plaus[tc]
             tt_lift = lift[tc]
             tt_coverage = cover
 
@@ -732,28 +718,25 @@ def experiment(get_dataset, n_instances, n_batches,
                                 tr_recall,
                                 tr_f1,
                                 tr_acc,
-                                tr_plaus,
                                 tr_lift,
                                 tr_coverage,
                                 tt_prec,
                                 tt_recall,
                                 tt_f1,
                                 tt_acc,
-                                tt_plaus,
                                 tt_lift,
                                 tt_coverage,
                                 acc,
-                                coka,
-                                timeit.default_timer() - start_time]
+                                coka]
 
         output = np.concatenate((output, output_anch), axis=0)
-        end_time = timeit.default_timer()
-        elapsed_time = end_time - start_time
-        print('Anchors Done. Completed run at: ' + time.asctime(time.gmtime()) + '. Elapsed time (seconds) = ' + str(elapsed_time))
+        anch_end_time = timeit.default_timer()
+        anch_elapsed_time = anch_end_time - anch_start_time
+        print('Anchors Done. Completed run at: ' + time.asctime(time.gmtime()) + '. Elapsed time (seconds) = ' + str(anch_elapsed_time))
 
     print()
     output_df = DataFrame(output, columns=headers)
-    output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '_rnst_' + str(random_state) + '_sp_' + str(support_paths) + '_ap_' + str(alpha_paths) + '_as_' + str(alpha_scores) + '_pr_' + str(precis_threshold) + '_timetest.csv'))
+    output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '_rnst_' + str(random_state) + '_sp_' + str(support_paths) + '_ap_' + str(alpha_paths) + '_as_' + str(alpha_scores) + '_pr_' + str(precis_threshold) + "_addt_" + str(add_trees) + '_timetest.csv'))
     print('Results saved at ' + mydata.pickle_path('results.pickle'))
     print()
     print('To retrieve results execute the following:')
@@ -761,16 +744,18 @@ def experiment(get_dataset, n_instances, n_batches,
     print('results = pickle.load(results_store)')
     print('results_store.close()')
     print()
-    return(rule_acc, results, output_df)
+    return(rule_acc, results, output_df, wb_elapsed_time + wbres_elapsed_time, anch_elapsed_time)
 
 def grid_experiment(dsets,
                 exp_grid):
 
-    for eg in exp_grid.index:
-        print(exp_grid.loc[eg])
+    headers = ['gr_index', 'dataset_set',
+                'wb_elapsed_time', 'anch_elapsed_time']
+    output = [[]] * len(dsets) * len(exp_grid.index)
 
-        for dataset in dsets:
-            rule_acc, results, output_df = experiment(dataset,
+    for eg in exp_grid.index:
+        for i, dataset in enumerate(dsets):
+            rule_acc, results, output_df, wb_elapsed_time, anch_elapsed_time = experiment(dataset,
                             random_state=exp_grid.loc[eg]['random_state'],
                             n_instances=exp_grid.loc[eg]['n_instances'],
                             n_batches=exp_grid.loc[eg]['n_batches'],
@@ -780,8 +765,19 @@ def grid_experiment(dsets,
                             alpha_paths=exp_grid.loc[eg]['alpha_paths'],
                             alpha_scores=exp_grid.loc[eg]['alpha_scores'],
                             precis_threshold=exp_grid.loc[eg]['precis_threshold'],
+                            add_trees=exp_grid.loc[eg]['add_trees'],
                             run_anchors=exp_grid.loc[eg]['run_anchors'],
                             which_trees=exp_grid.loc[eg]['which_trees'])
+
+            output[eg * len(dsets) + i] = [eg,
+                                            dataset.__name__,
+                                            wb_elapsed_time,
+                                            anch_elapsed_time]
+    output_df = DataFrame(output, columns=headers)
+    output_df.to_csv('whiteboxing/timetest.csv')
+
+
+
 
 # print to screen (controlled by input parameter) will show full results, not just major class
 # output_results=False
@@ -803,9 +799,6 @@ def grid_experiment(dsets,
 #
 # oprint('coverage by class')
 # oprint(coverage)
-#
-# oprint('plausibility')
-# oprint((prec * coverage)/results[i][0].pri_and_post[0])
 #
 # oprint('accuracy')
 # oprint(list(reversed(results[i][0].pri_and_post_accuracy))[0])

@@ -627,7 +627,6 @@ class rule_acc_lite:
                 pri_and_post_counts,
                 pri_and_post_recall,
                 pri_and_post_f1,
-                pri_and_post_plausibility,
                 pri_and_post_lift):
         self.instance_id = instance_id
         self.var_dict = var_dict
@@ -649,7 +648,6 @@ class rule_acc_lite:
         self.pri_and_post_counts = pri_and_post_counts
         self.pri_and_post_recall = pri_and_post_recall
         self.pri_and_post_f1 = pri_and_post_f1
-        self.pri_and_post_plausibility = pri_and_post_plausibility
         self.pri_and_post_lift = pri_and_post_lift
 
     def to_dict(self):
@@ -673,7 +671,6 @@ class rule_acc_lite:
         'pri_and_post_counts' : self.pri_and_post_counts,
         'pri_and_post_recall' : self.pri_and_post_recall,
         'pri_and_post_f1' : self.pri_and_post_f1,
-        'pri_and_post_plausibility' : self.pri_and_post_plausibility,
         'pri_and_post_lift' : self.pri_and_post_lift})
 
     def to_dict(self):
@@ -687,7 +684,6 @@ class rule_acc_lite:
                 self.pri_and_post_counts,
                 self.pri_and_post_recall,
                 self.pri_and_post_f1,
-                self.pri_and_post_plausibility,
                 self.pri_and_post_lift])
 
 class loo_encoder:
@@ -773,8 +769,6 @@ class rule_evaluator:
         # accuracy = (TP + TN) / num_instances formula: https://books.google.co.uk/books?id=ubzZDQAAQBAJ&pg=PR75&lpg=PR75&dq=rule+precision+and+coverage&source=bl&ots=Aa4Gj7fh5g&sig=6OsF3y4Kyk9KlN08OPQfkZCuZOc&hl=en&sa=X&ved=0ahUKEwjM06aW2brZAhWCIsAKHY5sA4kQ6AEIUjAE#v=onepage&q=rule%20precision%20and%20coverage&f=false
         accu = not_covered_counts/priors['counts'].sum()
 
-        # plausibility normalize(precis * cover / priors)
-
         # to avoid div by zeros
         pri_corrected = np.array([pri if pri > 0.0 else 1.0 for pri in priors['p_counts']])
         pos_corrected = np.array([pos if pri > 0.0 else 0.0 for pri, pos in zip(priors['p_counts'], post)])
@@ -784,9 +778,6 @@ class rule_evaluator:
         else:
             rec_corrected = counts / counts.sum()
             cov_corrected = np.array([counts.sum() / priors['counts'].sum()])
-
-        plaus = ( pos_corrected * ( rec_corrected ) ) / pri_corrected
-        plaus /= np.sum(plaus)
 
         # lift = precis / (total_cover * prior)
         lift = pos_corrected / ( ( cov_corrected ) * pri_corrected )
@@ -799,7 +790,6 @@ class rule_evaluator:
                 'recall' : recall,
                 'f1' : f1,
                 'accuracy' : accu,
-                'plausibility' : plaus,
                 'lift' : lift,
                 'chisq' : chisq})
 
@@ -883,7 +873,6 @@ class rule_accumulator(rule_evaluator):
         self.pri_and_post_counts = None
         self.pri_and_post_recall = None
         self.pri_and_post_f1 = None
-        self.pri_and_post_plausibility = None
         self.pri_and_post_lift = None
         self.isolation_pos = None
         self.stopping_param = None
@@ -1068,7 +1057,6 @@ class rule_accumulator(rule_evaluator):
         self.pri_and_post_recall = [np.full(self.n_classes, 1.0)] # counts / prior counts
         self.pri_and_post_f1 =  [2] * ( ( self.pri_and_post * self.pri_and_post_recall ) / ( self.pri_and_post + self.pri_and_post_recall ) ) # 2 * (precis * recall/(precis + recall) )
         self.pri_and_post_accuracy = np.array([p_counts['p_counts'].tolist()])
-        self.pri_and_post_plausibility = np.array([p_counts['p_counts'].tolist()]) # precis * cover / priors. Starts of same as prior
         self.pri_and_post_lift = [np.full(self.n_classes, 1.0)] # precis / (total_cover * prior)
         self.prior_entropy = entropy(self.pri_and_post_counts[0])
 
@@ -1114,10 +1102,6 @@ class rule_accumulator(rule_evaluator):
                     current = eval_rule['post'][np.where(eval_rule['labels'] == self.target_class)]
                     previous = list(reversed(self.pri_and_post))[0][np.where(eval_rule['labels'] == self.target_class)]
                     should_continue = self.__greedy_commit__(current, previous)
-                elif greedy == 'plausibility':
-                    current = eval_rule['plausibility'][np.where(eval_rule['labels'] == self.target_class)]
-                    previous = list(reversed(self.pri_and_post_plausibility))[0][np.where(eval_rule['labels'] == self.target_class)]
-                    should_continue = self.__greedy_commit__(current, previous)
                 elif greedy == 'f1':
                     current = eval_rule['f1'][np.where(eval_rule['labels'] == self.target_class)]
                     previous = list(reversed(self.pri_and_post_f1))[0][np.where(eval_rule['labels'] == self.target_class)]
@@ -1155,7 +1139,6 @@ class rule_accumulator(rule_evaluator):
             self.pri_and_post_accuracy = np.append(self.pri_and_post_accuracy, [eval_rule['accuracy']], axis=0)
             self.pri_and_post_recall = np.append(self.pri_and_post_recall, [eval_rule['recall']], axis=0 )
             self.pri_and_post_f1 = np.append(self.pri_and_post_f1, [eval_rule['f1']], axis=0 )
-            self.pri_and_post_plausibility = np.append(self.pri_and_post_plausibility, [eval_rule['plausibility']], axis=0 )
             self.pri_and_post_lift = np.append(self.pri_and_post_lift, [eval_rule['lift']], axis=0 )
 
             # entropy and info gain
@@ -1172,8 +1155,7 @@ class rule_accumulator(rule_evaluator):
         target_recall = [r[self.target_class] for r in self.pri_and_post_recall]
         target_f1 = [f[self.target_class] for f in self.pri_and_post_f1]
         target_accuracy = [a[self.target_class] for a in self.pri_and_post_accuracy]
-        target_plausibility = [u[self.target_class] for u in self.pri_and_post_plausibility]
-        target_prf = [[p, r, f, a, u] for p, r, f, a, u in zip(target_precision, target_recall, target_f1, target_accuracy, target_plausibility)]
+        target_prf = [[p, r, f, a] for p, r, f, a in zip(target_precision, target_recall, target_f1, target_accuracy)]
 
         target_cardinality = [i for i in range(len(target_precision))]
 
@@ -1197,5 +1179,4 @@ class rule_accumulator(rule_evaluator):
         self.pri_and_post_counts,
         self.pri_and_post_recall,
         self.pri_and_post_f1,
-        self.pri_and_post_plausibility,
         self.pri_and_post_lift))
