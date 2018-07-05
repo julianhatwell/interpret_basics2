@@ -236,7 +236,6 @@ def run_batches(f_walker, getter,
  support_paths=0.1, alpha_paths=0.5,
  disc_path_bins=4, disc_path_eqcounts=False,
  alpha_scores=0.5, which_trees='majority', precis_threshold=0.95):
-    sample_rule_accs = [[]] * n_batches
     results = [[]] * (batch_size * n_batches)
     for b in range(n_batches):
 
@@ -280,38 +279,6 @@ def run_batches(f_walker, getter,
             walked.set_patterns(support=support_paths, alpha=alpha_paths, sort=True, weights=weights) # with chi2 and support sorting
             # walked.set_patterns(support=support_paths, alpha=alpha_paths, sort=True) # with only support sorting
 
-            # grow a maximal rule from the freq patts
-            # ra = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            # ra.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
-            # ra.prune_rule()
-
-            # score the rule at each additional term
-            # _, score1, score2 = ra.score_rule(alpha=alpha_scores) # not the same as the paths alpha, only affects score one
-            # adj_max_score1 = np.max(score1[ra.isolation_pos:])
-            # score1_loc = np.where(np.array(score1 == adj_max_score1))[0][0]
-            # adj_max_score2 = np.max(score2[ra.isolation_pos:])
-            # score2_loc = np.where(np.array(score2 == adj_max_score2))[0][0]
-
-            # re-run the profile to the best scoring fixed length
-            # ra_best1 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            # ra_best1.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=score1_loc, prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
-            # ra_best1.prune_rule()
-            # ra_best1_lite = ra_best1.lite_instance()
-            # del ra_best1
-
-            # ra_best2 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            # ra_best2.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=score2_loc, prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
-            # ra_best2.prune_rule()
-            # ra_best2_lite = ra_best2.lite_instance()
-            # del ra_best2
-
-            # re-run the profile to penultimate by instability/misclassification = 0
-            # ra_pen = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            # ra_pen.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
-            # ra_pen.prune_rule()
-            # ra_pen_lite = ra_pen.lite_instance()
-            # del ra_pen
-
             # re-run the profile to greedy precis
             ra_gprec = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
             ra_gprec.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, greedy='precision', prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
@@ -319,43 +286,14 @@ def run_batches(f_walker, getter,
             ra_gprec_lite = ra_gprec.lite_instance()
             # del ra_gprec
 
-            # re-run the profile to greedy f1
-            # ra_gf1 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            # ra_gf1.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='f1', prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
-            # ra_gf1.prune_rule()
-            # ra_gf1_lite = ra_gf1.lite_instance()
-            # del ra_gf1
-
-            # re-run the profile to greedy accu
-            # ra_gaccu = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            # ra_gaccu.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='accuracy', prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
-            # ra_gaccu.prune_rule()
-            # ra_gaccu_lite = ra_gaccu.lite_instance()
-            # del ra_gaccu
-
-            # re-run the profile to greedy chi2
-            # ra_gchi2 = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            # ra_gchi2.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, fixed_length=ra.profile_iter - 1, greedy='chi2', prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
-            # ra_gchi2.prune_rule()
-            # ra_gchi2_lite = ra_gchi2.lite_instance()
-            # del ra_gchi2
-
             # collect results
-            # results[b * batch_size + i] = [ra_best1_lite, ra_best2_lite, ra_gprec_lite, ra_gf1_lite, ra_gaccu_lite, ra_gchi2_lite, ra_pen_lite, ra.lite_instance()]
             results[b * batch_size + i] = [ra_gprec_lite]
 
-        # saving a full rule_accumulator object at the end of each batch, for plotting etc
-        sample_rule_accs[b] = ra_gprec # used to be ra
         # report progress
         print('done batch ' + str(b))
 
-    results_store = open(data_container.pickle_path('results.pickle'), "wb")
-    pickle.dump(results, results_store)
-    results_store.close()
-
-    # result_sets = ['score_fun1', 'score_fun2', 'greedy_prec', 'greedy_f1', 'greedy_accu', 'greedy_chisq', 'penultimate', 'exhaustive']
     result_sets = ['greedy_prec']
-    return(sample_rule_accs, results, result_sets)
+    return(results, result_sets)
 
 def anchors_preproc(get_data, random_state):
     mydata = get_data(random_state)
@@ -469,8 +407,8 @@ def experiment(get_dataset, n_instances, n_batches,
     print('Starting new run at: ' + time.asctime(time.gmtime()) + ' with batch_size = ' + str(batch_size) + ' and n_batches = ' + str(n_batches) + '...(please wait)')
     wb_start_time = timeit.default_timer()
 
-    # rule_acc is just the last rule rule_accumulator, results are for the whole batch
-    rule_acc, results, result_sets = run_batches(f_walker=f_walker,
+    # results are for the whole batch
+    results, result_sets = run_batches(f_walker=f_walker,
      getter=getter,
      data_container=mydata,
      encoder=tt['encoder'],
@@ -576,8 +514,11 @@ def experiment(get_dataset, n_instances, n_batches,
     wbres_end_time = timeit.default_timer()
     wbres_elapsed_time = wbres_end_time - wbres_start_time
     print('Results Completed at: ' + time.asctime(time.gmtime()) + '. Elapsed time (seconds) = ' + str(wbres_elapsed_time))
+
     print('Whiteboxing Randfor Done')
     print()
+
+    # run anchors if requested
     anch_elapsed_time = None
     if run_anchors:
         print('Processing Anchors')
@@ -736,15 +677,21 @@ def experiment(get_dataset, n_instances, n_batches,
 
     print()
     output_df = DataFrame(output, columns=headers)
-    output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '_rnst_' + str(random_state) + '_sp_' + str(support_paths) + '_ap_' + str(alpha_paths) + '_as_' + str(alpha_scores) + '_pr_' + str(precis_threshold) + "_addt_" + str(add_trees) + '_timetest.csv'))
-    print('Results saved at ' + mydata.pickle_path('results.pickle'))
+    output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '_rnst_' + str(random_state) + "_addt_" + str(add_trees) + '_timetest.csv'))
+    # save the full results object
+    results_store = open(mydata.pickle_path('results' + '_rnst_' + str(random_state) + '.pickle'), "wb")
+    pickle.dump(results, results_store)
+    results_store.close()
+
+
+    print('Results saved at ' + mydata.pickle_path('results' + '_rnst_' + str(random_state) + '.pickle'))
     print()
     print('To retrieve results execute the following:')
-    print('results_store = open(\'' + mydata.pickle_path('results.pickle') + '\', "rb")')
+    print('results_store = open(\'' + mydata.pickle_path('results' + '_rnst_' + str(random_state) + '.pickle') + '\', "rb")')
     print('results = pickle.load(results_store)')
     print('results_store.close()')
     print()
-    return(rule_acc, results, output_df, wb_elapsed_time + wbres_elapsed_time, anch_elapsed_time)
+    return(results, output_df, wb_elapsed_time + wbres_elapsed_time, anch_elapsed_time)
 
 def grid_experiment(dsets,
                 exp_grid):
@@ -755,7 +702,7 @@ def grid_experiment(dsets,
 
     for eg in exp_grid.index:
         for i, dataset in enumerate(dsets):
-            rule_acc, results, output_df, wb_elapsed_time, anch_elapsed_time = experiment(dataset,
+            results, output_df, wb_elapsed_time, anch_elapsed_time = experiment(dataset,
                             random_state=exp_grid.loc[eg]['random_state'],
                             n_instances=exp_grid.loc[eg]['n_instances'],
                             n_batches=exp_grid.loc[eg]['n_batches'],
@@ -775,34 +722,3 @@ def grid_experiment(dsets,
                                             anch_elapsed_time]
     output_df = DataFrame(output, columns=headers)
     output_df.to_csv('whiteboxing/timetest.csv')
-
-
-
-
-# print to screen (controlled by input parameter) will show full results, not just major class
-# output_results=False
-# oprint = lambda x : print(x) if output_results else None
-
-# oprint('instance_id')
-# oprint(results[i][0].instance_id)
-# oprint('rule')
-# oprint(mydata.pretty_rule(results[i][0].pruned_rule))
-# oprint('majority (predicted) class')
-# oprint(results[i][0].major_class)
-# oprint('model vote split')
-# oprint(results[i][0].model_post)
-# oprint('priors')
-# oprint(results[i][0].pri_and_post[0])
-# # prec = list(reversed(results[i][0].pri_and_post))[0]
-# oprint('precision by class')
-# oprint(prec)
-#
-# oprint('coverage by class')
-# oprint(coverage)
-#
-# oprint('accuracy')
-# oprint(list(reversed(results[i][0].pri_and_post_accuracy))[0])
-#
-# oprint('total rule coverage')
-# oprint(p_counts['counts'].sum()/len(tt['y_train']))
-# oprint('')
