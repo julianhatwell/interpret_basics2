@@ -160,6 +160,45 @@ class data_container:
         'train_priors' : train_priors,
         'test_priors' : test_priors})
 
+    def xval_split(self, iv_low, iv_high, test_index, random_state=None):
+        iv_high = int(iv_high)
+        iv_low = int(iv_low)
+        test_index = int(test_index)
+
+        if test_index >= iv_high or test_index < iv_low:
+            print('test_index out of range. Setting to lowest value in range (iv_low)')
+            test_index = iv_low
+
+        if random_state is None:
+            random_state = self.random_state
+
+        # data in readiness
+        X, y = self.data_pre[self.features], self.data_pre[self.class_col]
+
+        # generate an indexing vector
+        iv = np.random.RandomState(random_state).randint(low=iv_low, high=iv_high, size=np.shape(self.data_pre)[0])
+
+        # perform the split
+        X_test = X.iloc[iv == test_index]
+        y_test = y.iloc[iv == test_index]
+        X_train = X.iloc[iv != test_index]
+        y_train = y.iloc[iv != test_index]
+
+        train_priors = y_train.value_counts().sort_index()/len(y_train)
+        test_priors = y_test.value_counts().sort_index()/len(y_test)
+
+        X_train_enc = self.encoder.transform(X_train)
+
+        return({
+        'X_train': X_train,
+        'X_train_enc' : X_train_enc,
+        'X_test' : X_test,
+        'y_train' : y_train,
+        'y_test' : y_test,
+        'encoder' : self.encoder,
+        'train_priors' : train_priors,
+        'test_priors' : test_priors})
+
     def pretty_rule(self, rule):
         Tr_Fa = lambda x, y, z : x + ' True' if ~y else x + ' False'
         lt_gt = lambda x, y, z : x + ' <= ' + str(z) if y else x + ' > ' + str(z)

@@ -8,7 +8,7 @@ from pandas import DataFrame, Series
 from forest_surveyor import p_count, p_count_corrected
 from forest_surveyor.plotting import plot_confusion_matrix
 from forest_surveyor.structures import rule_accumulator, forest_walker, batch_getter, rule_tester, loo_encoder
-from forest_surveyor.mp_callable import mp_run_rf
+from forest_surveyor.mp_callable import mp_experiment, mp_experiment_scratch
 from scipy.stats import chi2_contingency
 from math import sqrt
 from sklearn.ensemble import RandomForestClassifier
@@ -22,51 +22,6 @@ from lime import lime_tabular as limtab
 # bug in sk-learn. Should be fixed in August
 import warnings
 warnings.filterwarnings(module='sklearn*', action='ignore', category=DeprecationWarning)
-
-def tune_rf_mp(X, y, grid = None, random_state=123, save_path = None):
-
-    if grid is None:
-        grid = ParameterGrid({
-            'n_estimators': [(i + 1) * 500 for i in range(3)]
-            , 'max_depth' : [i for i in [8, 16]]
-            , 'min_samples_leaf' : [1, 5]
-            })
-
-    start_time = timeit.default_timer()
-
-    # Define an output queue
-    output = mp.Queue()
-
-    # List of processes that we want to run
-    processes = [mp.Process(target=mp_run_rf, args=(X, y, g, random_state, output)) for g in grid]
-
-    print(str(len(grid)) + ' runs to do')
-    print()
-    print('Going parallel...')
-
-    # Run processes
-    for p in processes:
-        p.start()
-
-    # Exit the completed processes
-    for p in processes:
-        p.join()
-
-    # Get process results from the output queue
-    params = [output.get() for p in processes]
-
-    print('Completed ' + str(len(params)) + ' run(s) and exited parallel')
-    print()
-    elapsed = timeit.default_timer() - start_time
-    print('Time elapsed:', "{:0.4f}".format(elapsed), 'seconds')
-
-    if save_path is not None:
-        with open(save_path + 'params.json', 'w') as outfile:
-            json.dump(params, outfile)
-
-    params = DataFrame(params).sort_values(['score','n_estimators','max_depth','min_samples_leaf'],
-                                            ascending=[False, True, True, False])
-    return(params)
 
 def do_tuning(X, y, grid = None, random_state=123, save_path = None):
     if grid is None:
@@ -679,7 +634,7 @@ def experiment(get_dataset, n_instances, n_batches,
     output_df = DataFrame(output, columns=headers)
     output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '_rnst_' + str(random_state) + "_addt_" + str(add_trees) + '_timetest.csv'))
     # save the full results object
-    results_store = open(mydata.pickle_path('results' + '_rnst_' + str(random_state) + '.pickle'), "wb")
+    results_store = open(mydata.pickle_path('results' + '_rnst_' + str(random_state) + "_addt_" + str(add_trees) + '.pickle'), "wb")
     pickle.dump(results, results_store)
     results_store.close()
 
@@ -722,3 +677,72 @@ def grid_experiment(dsets,
                                             anch_elapsed_time]
     output_df = DataFrame(output, columns=headers)
     output_df.to_csv('whiteboxing/timetest.csv')
+
+
+def grid_experiment_mp(grid):
+    # capture timing results
+    headers = ['gr_index', 'wb_elapsed_time', 'anch_elapsed_time']
+    output = [[]] * len(grid.index)
+
+    print('Going parallel...')
+    pool = mp.Pool(processes=mp.cpu_count()-1)
+    results = []
+    for g in range(len(grid.index)):
+        index = grid.loc[g].index
+        dataset = grid.loc[g].dataset
+        random_state = grid.loc[g].random_state
+        add_trees = grid.loc[g].add_trees
+        override_tuning = grid.loc[g].override_tuning
+        n_instances = grid.loc[g].n_instances
+        n_batches = grid.loc[g].n_batches
+        eval_model = grid.loc[g].eval_model
+        alpha_scores = grid.loc[g].alpha_scores
+        alpha_paths = grid.loc[g].alpha_paths
+        support_paths = grid.loc[g].support_paths
+        precis_threshold = grid.loc[g].precis_threshold
+        run_anchors = grid.loc[g].run_anchors
+        which_trees = grid.loc[g].which_trees
+        disc_path_bins = grid.loc[g].disc_path_bins
+        disc_path_eqcounts = grid.loc[g].disc_path_eqcounts
+        iv_low = grid.loc[g].iv_low
+        iv_high = grid.loc[g].iv_high
+        # ugly code because args must be ordered tuple, no keywords are working
+        results.append(pool.apply_async(mp_experiment_scratch, (index, dataset, random_state, add_trees,
+                                                                override_tuning, n_instances, n_batches,
+                                                                eval_model, alpha_scores, alpha_paths,
+                                                                support_paths, precis_threshold, run_anchors,
+                                                                which_trees, disc_path_bins, disc_path_eqcounts,
+                                                                iv_low, iv_high)
+                                                                ))
+    pool.close()
+    pool.join()
+
+    start_time = timeit.default_timer()
+
+    # # Define an output queue
+    # output = mp.Queue()
+    #
+    # # List of processes that we want to run
+    # processes = [mp.Process(target=mp_experiment, args=(grid_line = grid.loc[g],)) for g in grid.index]
+    #
+    # print(str(len(grid)) + ' runs to do')
+    # print()
+
+
+    # # Run processes
+    # for p in processes:
+    #     p.start()
+    # #
+    # # Exit the completed processes
+    # for p in processes:
+    #     p.join()
+
+    # # Get process results from the output queue
+    # results_tuples = [output.get() for p in processes]
+
+    # print('Completed ' + str(len(grid)) + ' run(s) and exited parallel')
+    # print()
+    # elapsed = timeit.default_timer() - start_time
+    # print('Time elapsed:', "{:0.4f}".format(elapsed), 'seconds')
+
+    return(results)
