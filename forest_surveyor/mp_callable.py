@@ -258,18 +258,15 @@ def anchors_explanation(instance, explainer, forest, random_state=123, threshold
 ###### above is a copy of the routines module code #########
 ###### below is a multiprocessing callable copy of the experiment function code ############
 
-def mp_experiment(index, dataset, n_instances, n_batches,
-    random_state, override_tuning, support_paths,
-    alpha_paths, alpha_scores, which_trees,
-    precis_threshold, add_trees, eval_model,
-    run_anchors, disc_path_bins, disc_path_eqcounts,
-    iv_low, iv_high):
+def mp_experiment(grid_idx, dataset, random_state, add_trees,
+                    override_tuning, n_instances, n_batches,
+                    eval_model, alpha_scores, alpha_paths,
+                    support_paths, precis_threshold, run_anchors,
+                    which_trees, disc_path_bins, disc_path_eqcounts,
+                    iv_low, iv_high):
 
-    print('LOADING NEW DATA SET.')
-    print()
-    # load a data set
-    mydata = eval(str(dataset) + '(random_state=random_state)')
-
+    # load data set
+    mydata = dataset()
     # train test split - by non-overlapping folds
     # hard code the random state here, so it's the same for all runs
     # use the parameter grid random state as the index picker, for non overlapping folds
@@ -279,8 +276,6 @@ def mp_experiment(index, dataset, n_instances, n_batches,
     ############ Only runs when required ################
     #####################################################
 
-    print('Finding best parameters for Random Forest. Checking for prior tuning parameters.')
-    print()
     best_params = tune_rf(tt['X_train_enc'], tt['y_train'],
      save_path = mydata.pickle_path(),
      random_state=mydata.random_state,
@@ -321,11 +316,6 @@ def mp_experiment(index, dataset, n_instances, n_batches,
     batch_size = int(n_instances / n_batches)
     n_instances = batch_size * n_batches
 
-    print('''NOTE: During run, true divide errors are acceptable.
-    Returned when a tree does not contain any node for either/both upper and lower bounds of a feature.
-
-    ''')
-    print('Starting new run at: ' + time.asctime(time.gmtime()) + ' with batch_size = ' + str(batch_size) + ' and n_batches = ' + str(n_batches) + '...(please wait)')
     wb_start_time = timeit.default_timer()
 
     # results are for the whole batch
@@ -347,9 +337,7 @@ def mp_experiment(index, dataset, n_instances, n_batches,
 
     wb_end_time = timeit.default_timer()
     wb_elapsed_time = wb_end_time - wb_start_time
-    print('Done. Completed run at: ' + time.asctime(time.gmtime()) + '. Elapsed time (seconds) = ' + str(wb_elapsed_time))
-    print()
-    print('Compiling Training Results at: ' + time.asctime(time.gmtime()) + '...(please wait)')
+
     wbres_start_time = timeit.default_timer()
 
     headers = ['instance_id', 'result_set',
@@ -372,6 +360,8 @@ def mp_experiment(index, dataset, n_instances, n_batches,
     pred_instances, pred_labels = predictor.encode_pred(prediction_model=enc_rf, bootstrap=False)
     # leave one out encoder for test set evaluation
     looe = loo_encoder(pred_instances, pred_labels, tt['encoder'])
+
+    # iterate over all the test instances to determine the various scores using leave-one-out testing
     for i in range(len(results)):
         # these are the same for a whole result set
         instance_id = results[i][0].instance_id
@@ -434,18 +424,13 @@ def mp_experiment(index, dataset, n_instances, n_batches,
 
     wbres_end_time = timeit.default_timer()
     wbres_elapsed_time = wbres_end_time - wbres_start_time
-    print('Results Completed at: ' + time.asctime(time.gmtime()) + '. Elapsed time (seconds) = ' + str(wbres_elapsed_time))
-
-    print('Whiteboxing Randfor Done')
-    print()
+    # this completes the CHIRPS runs
 
     # run anchors if requested
-    anch_elapsed_time = None
+    anch_elapsed_time = None # optional no timing
     if run_anchors:
-        print('Processing Anchors')
-        print('Starting new run at: ' + time.asctime(time.gmtime()))
+        # collect timings
         anch_start_time = timeit.default_timer()
-        print()
         instance_ids = tt['X_test'].index.tolist() # record of row indices will be lost after preproc
         mydata, tt, explainer = anchors_preproc(get_dataset, random_state)
 
@@ -454,6 +439,7 @@ def mp_experiment(index, dataset, n_instances, n_batches,
         encoder=tt['encoder'],
         random_state=mydata.random_state)
 
+        # collect model prediction performance stats
         if eval_model:
             cm, acc, coka, prfs = evaluate_model(prediction_model=enc_rf, X=tt['X_test'], y=tt['y_test'],
                          class_names=mydata.class_names,
@@ -462,6 +448,8 @@ def mp_experiment(index, dataset, n_instances, n_batches,
             cm, acc, coka, prfs = evaluate_model(prediction_model=enc_rf, X=tt['X_test'], y=tt['y_test'],
                          class_names=mydata.class_names,
                          plot_cm=False, plot_cm_norm=False)
+
+        # iterate through each instance to generate the anchors explanation
         output_anch = [[]] * n_instances
         for i in range(n_instances):
             instance_id = instance_ids[i]
@@ -594,9 +582,7 @@ def mp_experiment(index, dataset, n_instances, n_batches,
         output = np.concatenate((output, output_anch), axis=0)
         anch_end_time = timeit.default_timer()
         anch_elapsed_time = anch_end_time - anch_start_time
-        print('Anchors Done. Completed run at: ' + time.asctime(time.gmtime()) + '. Elapsed time (seconds) = ' + str(anch_elapsed_time))
 
-    print()
     output_df = DataFrame(output, columns=headers)
     output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '_rnst_' + str(random_state) + "_addt_" + str(add_trees) + '_timetest.csv'))
     # save the full results object
@@ -604,35 +590,4 @@ def mp_experiment(index, dataset, n_instances, n_batches,
     pickle.dump(results, results_store)
     results_store.close()
 
-
-    print('Results saved at ' + mydata.pickle_path('results' + '_rnst_' + str(random_state) + '.pickle'))
-    print()
-    print('To retrieve results execute the following:')
-    print('results_store = open(\'' + mydata.pickle_path('results' + '_rnst_' + str(random_state) + '.pickle') + '\', "rb")')
-    print('results = pickle.load(results_store)')
-    print('results_store.close()')
-    print()
-    return(results, output_df, wb_elapsed_time + wbres_elapsed_time, anch_elapsed_time, grid_index)
-
-
-def mp_experiment_scratch(index, dataset, random_state, add_trees,
-                            override_tuning, n_instances, n_batches,
-                            eval_model, alpha_scores, alpha_paths,
-                            support_paths, precis_threshold, run_anchors,
-                            which_trees, disc_path_bins, disc_path_eqcounts,
-                            iv_low, iv_high):
-
-    #mydata = dataset()
-
-    results = {'index' : index, 'dataset' : dataset, 'n_instances' : n_instances, 'n_batches' : n_batches,
-        'random_state' : random_state, 'override_tuning' : override_tuning, 'support_paths' : support_paths,
-        'alpha_paths' : alpha_paths, 'alpha_scores' : alpha_scores, 'which_trees' : which_trees,
-        'precis_threshold' : precis_threshold, 'add_trees' : add_trees, 'eval_model' : eval_model,
-        'run_anchors' : run_anchors, 'disc_path_bins' : disc_path_bins, 'disc_path_eqcounts' : disc_path_eqcounts,
-        'iv_low' : iv_low, 'iv_high' : iv_high}
-
-    # results_store = open(mydata.pickle_path('results' + '_rnst_' + str(random_state) + "_addt_" + str(add_trees) + '.pickle'), "wb")
-    # pickle.dump(results, results_store)
-    # results_store.close()
-
-    return(results)
+    return(results, output_df, wb_elapsed_time + wbres_elapsed_time, anch_elapsed_time, grid_idx)

@@ -172,11 +172,11 @@ class data_container:
         if random_state is None:
             random_state = self.random_state
 
-        # data in readiness
-        X, y = self.data_pre[self.features], self.data_pre[self.class_col]
-
         # generate an indexing vector
         iv = np.random.RandomState(random_state).randint(low=iv_low, high=iv_high, size=np.shape(self.data_pre)[0])
+
+        # data in readiness
+        X, y = self.data_pre[self.features], self.data_pre[self.class_col]
 
         # perform the split
         X_test = X.iloc[iv == test_index]

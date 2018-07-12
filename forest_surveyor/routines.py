@@ -8,7 +8,7 @@ from pandas import DataFrame, Series
 from forest_surveyor import p_count, p_count_corrected
 from forest_surveyor.plotting import plot_confusion_matrix
 from forest_surveyor.structures import rule_accumulator, forest_walker, batch_getter, rule_tester, loo_encoder
-from forest_surveyor.mp_callable import mp_experiment, mp_experiment_scratch
+from forest_surveyor.mp_callable import mp_experiment
 from scipy.stats import chi2_contingency
 from math import sqrt
 from sklearn.ensemble import RandomForestClassifier
@@ -681,14 +681,19 @@ def grid_experiment(dsets,
 
 def grid_experiment_mp(grid):
     # capture timing results
-    headers = ['gr_index', 'wb_elapsed_time', 'anch_elapsed_time']
-    output = [[]] * len(grid.index)
+    start_time = timeit.default_timer()
 
-    print('Going parallel...')
-    pool = mp.Pool(processes=mp.cpu_count()-1)
+    print(str(len(grid.index)) + ' runs to do')
+
+    n_cores = mp.cpu_count()-1
+    print('Going parallel over ' + str(n_cores) + ' cores ... (please wait)')
+    pool = mp.Pool(processes=n_cores)
     results = []
+
+    # iterate over the paramaters for each run
     for g in range(len(grid.index)):
-        index = grid.loc[g].index
+        # ugly code because args must be ordered tuple, no keywords are working
+        grid_idx = grid.loc[g].grid_idx
         dataset = grid.loc[g].dataset
         random_state = grid.loc[g].random_state
         add_trees = grid.loc[g].add_trees
@@ -707,42 +712,21 @@ def grid_experiment_mp(grid):
         iv_low = grid.loc[g].iv_low
         iv_high = grid.loc[g].iv_high
         # ugly code because args must be ordered tuple, no keywords are working
-        results.append(pool.apply_async(mp_experiment_scratch, (index, dataset, random_state, add_trees,
+        results.append(pool.apply_async(mp_experiment_scratch, (grid_idx, dataset, random_state, add_trees,
                                                                 override_tuning, n_instances, n_batches,
                                                                 eval_model, alpha_scores, alpha_paths,
                                                                 support_paths, precis_threshold, run_anchors,
                                                                 which_trees, disc_path_bins, disc_path_eqcounts,
                                                                 iv_low, iv_high)
                                                                 ))
+    # clean up the multiprocessing
     pool.close()
     pool.join()
 
-    start_time = timeit.default_timer()
-
-    # # Define an output queue
-    # output = mp.Queue()
-    #
-    # # List of processes that we want to run
-    # processes = [mp.Process(target=mp_experiment, args=(grid_line = grid.loc[g],)) for g in grid.index]
-    #
-    # print(str(len(grid)) + ' runs to do')
-    # print()
-
-
-    # # Run processes
-    # for p in processes:
-    #     p.start()
-    # #
-    # # Exit the completed processes
-    # for p in processes:
-    #     p.join()
-
-    # # Get process results from the output queue
-    # results_tuples = [output.get() for p in processes]
-
-    # print('Completed ' + str(len(grid)) + ' run(s) and exited parallel')
-    # print()
-    # elapsed = timeit.default_timer() - start_time
-    # print('Time elapsed:', "{:0.4f}".format(elapsed), 'seconds')
+    print('Completed ' + str(len(grid)) + ' run(s) and exited parallel')
+    print()
+    # capture timing results
+    elapsed = timeit.default_timer() - start_time
+    print('Time elapsed:', "{:0.4f}".format(elapsed), 'seconds')
 
     return(results)

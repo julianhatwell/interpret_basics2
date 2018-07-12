@@ -1,1 +1,1 @@
-{"max_depth": 16, "score": 0.9842845326716294, "n_estimators": 1000, "min_samples_leaf": 1, "elapsed_time": 3.7377445325297742}
+{"elapsed_time": 5.286326705723447, "max_depth": 16, "min_samples_leaf": 1, "n_estimators": 1000, "score": 0.9916267942583732}
