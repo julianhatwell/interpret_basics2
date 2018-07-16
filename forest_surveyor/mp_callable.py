@@ -39,24 +39,16 @@ def do_tuning(X, y, grid = None, random_state=123, save_path = None):
     params = []
     best_score = 0
 
-    print(str(len(grid)) + ' runs to do')
-    print()
     for g in grid:
-        print('starting new run at: ' + time.asctime(time.gmtime()))
-        print(g)
         tree_start_time = timeit.default_timer()
         rf.set_params(oob_score = True, random_state=random_state, **g)
         rf.fit(X, y)
         tree_end_time = timeit.default_timer()
         g['elapsed_time'] = tree_end_time - tree_start_time
         g['score'] = rf.oob_score_
-        print('ending run at: ' + time.asctime(time.gmtime()))
         params.append(g)
-        print('completed ' + str(len(params)) + ' run(s)')
-        print()
 
     elapsed = timeit.default_timer() - start_time
-    print('Time elapsed:', "{:0.4f}".format(elapsed), 'seconds')
 
     params = DataFrame(params).sort_values(['score','n_estimators','max_depth','min_samples_leaf'],
                                         ascending=[False, True, True, False])
@@ -65,7 +57,7 @@ def do_tuning(X, y, grid = None, random_state=123, save_path = None):
     best_params = {k: int(v) if k not in ('score', 'elapsed_time') else v for k, v in best_grid.items()}
 
     if save_path is not None:
-        with open(save_path + 'best_params.json', 'w') as outfile:
+        with open(save_path + 'best_params_rndst_' + str(random_state) + '.json', 'w') as outfile:
             json.dump(best_params, outfile)
 
     return(best_params)
@@ -74,15 +66,16 @@ def tune_rf(X, y, grid = None, random_state=123, save_path = None, override_tuni
 
     # to do - test allowable structure of grid input
     if override_tuning:
+        print('overriding previous tuning parameters')
         best_params = do_tuning(X, y, grid=grid, random_state=random_state, save_path=save_path)
     else:
         try:
-            with open(save_path + 'best_params.json', 'r') as infile:
+            with open(save_path + 'best_params_rndst_' + str(random_state) + '.json', 'r') as infile:
+                print('using previous tuning parameters')
                 best_params = json.load(infile)
-            print('Using existing params file. To re-tune, delete file at ' + save_path + 'best_params.json')
-            print()
             return(best_params)
         except:
+            print('finding best tuning parameters')
             best_params = do_tuning(X, y, grid=grid, random_state=random_state, save_path=save_path)
 
     print("Best OOB Accuracy Estimate during tuning: " "{:0.4f}".format(best_params['score']))
@@ -95,26 +88,21 @@ def train_rf(X, y, best_params = None, encoder = None, random_state = 123):
 
     # to do - test allowable structure of grid input
     if best_params is not None:
+        # train a random forest model using given parameters
         best_params = {k: v for k, v in best_params.items() if k not in ('score', 'elapsed_time')}
-        print("Training a random forest model using given parameters " + str(best_params) + "... (please wait)")
         rf = RandomForestClassifier(random_state=random_state, oob_score=True, **best_params)
     else:
-        print("Training a random forest model using default parameters... (please wait)")
+        # train a random forest model using default parameters
         rf = RandomForestClassifier(random_state=random_state, oob_score=True)
 
     rf.fit(X, y)
-    print()
-    print("Done")
-    print()
 
     if encoder is not None:
+        # create helper function enc_model(). A pipeline: feature encoding -> rf model
         enc_model = make_pipeline(encoder, rf)
-        print("Created helper function enc_model(). A pipeline: feature encoding -> rf model")
-        print()
         return(rf, enc_model)
     else:
-        print('No encoder was provided. An encoder is required if not all the data is numerical.')
-        print()
+        # if no encoder provided, return the basic model
         return(rf, rf)
 
 def evaluate_model(prediction_model, X, y, class_names=None, plot_cm=True, plot_cm_norm=True):
@@ -125,14 +113,6 @@ def evaluate_model(prediction_model, X, y, class_names=None, plot_cm=True, plot_
     prfs = precision_recall_fscore_support(y, pred)
     acc = accuracy_score(y, pred)
     coka = cohen_kappa_score(y, pred)
-    print("Accuracy on unseen instances: " "{:0.4f}".format(acc))
-    print("Cohen's Kappa on unseen instances: " "{:0.4f}".format(coka))
-    print()
-    print('Precision: ' + str(prfs[0].round(2).tolist()))
-    print('Recall: ' + str(prfs[1].round(2).tolist()))
-    print('F1 Score: ' + str(prfs[2].round(2).tolist()))
-    print('Support: ' + str(prfs[3].round(2).tolist()))
-    print()
 
     if plot_cm:
         plot_confusion_matrix(cm, class_names=class_names,
@@ -159,9 +139,12 @@ def run_batches(f_walker, getter,
  support_paths=0.1, alpha_paths=0.5,
  disc_path_bins=4, disc_path_eqcounts=False,
  alpha_scores=0.5, which_trees='majority', precis_threshold=0.95):
-    results = [[]] * (batch_size * n_batches)
-    for b in range(n_batches):
 
+    # create a list to collect completed rule accumulators
+    completed_rule_accs = [[]] * (batch_size * n_batches)
+
+    for b in range(n_batches):
+        print('walking forest for batch ' + str(b))
         instances, labels = getter.get_next(batch_size)
         instance_ids = labels.index.tolist()
         # get all the tree paths instance by instance
@@ -209,18 +192,15 @@ def run_batches(f_walker, getter,
             ra_gprec_lite = ra_gprec.lite_instance()
             # del ra_gprec
 
-            # collect results
-            results[b * batch_size + i] = [ra_gprec_lite]
+            # collect completed rule accumulator
+            completed_rule_accs[b * batch_size + i] = [ra_gprec_lite]
 
-        # report progress
-        print('done batch ' + str(b))
+    algorithm = ['greedy_prec'] # this method proved to be the best. For alternatives, go to the github and see older versions
+    return(completed_rule_accs, algorithm)
 
-    result_sets = ['greedy_prec']
-    return(results, result_sets)
-
-def anchors_preproc(get_data, random_state):
-    mydata = get_data(random_state)
-    tt = mydata.tt_split()
+def anchors_preproc(dataset, random_state, iv_low, iv_high):
+    mydata = dataset(random_state)
+    tt = mydata.xval_split(iv_low=iv_low, iv_high=iv_high, test_index=random_state, random_state=123)
 
     # mappings for anchors
     mydata.class_names=mydata.get_label(mydata.class_col, [i for i in range(len(mydata.class_names))]).tolist()
@@ -265,8 +245,9 @@ def mp_experiment(grid_idx, dataset, random_state, add_trees,
                     which_trees, disc_path_bins, disc_path_eqcounts,
                     iv_low, iv_high):
 
+    print('starting new run for random_state ' + str(random_state) + ' and ' + str(add_trees) + ' additional trees')
     # load data set
-    mydata = dataset()
+    mydata = dataset(random_state=random_state)
     # train test split - by non-overlapping folds
     # hard code the random state here, so it's the same for all runs
     # use the parameter grid random state as the index picker, for non overlapping folds
@@ -318,8 +299,8 @@ def mp_experiment(grid_idx, dataset, random_state, add_trees,
 
     wb_start_time = timeit.default_timer()
 
-    # results are for the whole batch
-    results, result_sets = run_batches(f_walker=f_walker,
+    # collect completed rule_acc_lite objects for the whole batch
+    completed_rule_accs, result_sets = run_batches(f_walker=f_walker,
      getter=getter,
      data_container=mydata,
      encoder=tt['encoder'],
@@ -351,7 +332,7 @@ def mp_experiment(grid_idx, dataset, random_state, add_trees,
                 'precision(tt)', 'recall(tt)', 'f1(tt)',
                 'accuracy(tt)', 'lift(tt)',
                 'total coverage(tt)', 'model_acc', 'model_ck']
-    output = [[]] * len(results) * len(result_sets)
+    output = [[]] * len(completed_rule_accs) * len(result_sets)
 
     # get all the label predictions done
     predictor = rule_tester(data_container=mydata,
@@ -362,25 +343,26 @@ def mp_experiment(grid_idx, dataset, random_state, add_trees,
     looe = loo_encoder(pred_instances, pred_labels, tt['encoder'])
 
     # iterate over all the test instances to determine the various scores using leave-one-out testing
-    for i in range(len(results)):
+    print('evaluating found explanations')
+    for i in range(len(completed_rule_accs)):
         # these are the same for a whole result set
-        instance_id = results[i][0].instance_id
-        mc = results[i][0].major_class
-        mc_lab = results[i][0].major_class_label
-        tc = results[i][0].target_class
-        tc_lab = results[i][0].target_class_label
-        mvs = results[i][0].model_post[tc]
-        prior = results[i][0].pri_and_post[0][tc]
+        instance_id = completed_rule_accs[i][0].instance_id
+        mc = completed_rule_accs[i][0].major_class
+        mc_lab = completed_rule_accs[i][0].major_class_label
+        tc = completed_rule_accs[i][0].target_class
+        tc_lab = completed_rule_accs[i][0].target_class_label
+        mvs = completed_rule_accs[i][0].model_post[tc]
+        prior = completed_rule_accs[i][0].pri_and_post[0][tc]
         for j, rs in enumerate(result_sets):
-            rule = results[i][j].pruned_rule
+            rule = completed_rule_accs[i][j].pruned_rule
             pretty_rule = mydata.pretty_rule(rule)
             rule_len = len(rule)
-            tr_prec = list(reversed(results[i][j].pri_and_post))[0][tc]
-            tr_recall = list(reversed(results[i][j].pri_and_post_recall))[0][tc]
-            tr_f1 = list(reversed(results[i][j].pri_and_post_f1))[0][tc]
-            tr_acc = list(reversed(results[i][j].pri_and_post_accuracy))[0][tc]
-            tr_lift = list(reversed(results[i][j].pri_and_post_lift))[0][tc]
-            tr_coverage = list(reversed(results[i][j].coverage))[0]
+            tr_prec = list(reversed(completed_rule_accs[i][j].pri_and_post))[0][tc]
+            tr_recall = list(reversed(completed_rule_accs[i][j].pri_and_post_recall))[0][tc]
+            tr_f1 = list(reversed(completed_rule_accs[i][j].pri_and_post_f1))[0][tc]
+            tr_acc = list(reversed(completed_rule_accs[i][j].pri_and_post_accuracy))[0][tc]
+            tr_lift = list(reversed(completed_rule_accs[i][j].pri_and_post_lift))[0][tc]
+            tr_coverage = list(reversed(completed_rule_accs[i][j].coverage))[0]
 
             # get test sample ready by leave-one-out then evaluating
             instances, enc_instances, labels = looe.loo_encode(instance_id)
@@ -397,7 +379,7 @@ def mp_experiment(grid_idx, dataset, random_state, add_trees,
             tt_lift = eval_rule['lift'][tc]
             tt_coverage = eval_rule['coverage']
 
-            output[j * len(results) + i] = [instance_id,
+            output[j * len(completed_rule_accs) + i] = [instance_id,
                     rs,
                     pretty_rule,
                     rule_len,
@@ -429,10 +411,11 @@ def mp_experiment(grid_idx, dataset, random_state, add_trees,
     # run anchors if requested
     anch_elapsed_time = None # optional no timing
     if run_anchors:
+        print('running anchors for random_state ' + str(mydata.random_state))
         # collect timings
         anch_start_time = timeit.default_timer()
         instance_ids = tt['X_test'].index.tolist() # record of row indices will be lost after preproc
-        mydata, tt, explainer = anchors_preproc(get_dataset, random_state)
+        mydata, tt, explainer = anchors_preproc(dataset, random_state, iv_low, iv_high)
 
         rf, enc_rf = train_rf(tt['X_train_enc'], y=tt['y_train'],
         best_params=best_params,
@@ -457,7 +440,7 @@ def mp_experiment(grid_idx, dataset, random_state, add_trees,
             instance = tt['X_test'][i]
             exp = anchors_explanation(instance, explainer, rf, threshold=precis_threshold)
             # capture the explainer
-            results[i].append(exp)
+            completed_rule_accs[i].append(exp)
 
             # Get test examples where the anchor applies
             fit_anchor_train = np.where(np.all(tt['X_train'][:, exp.features()] == instance[exp.features()], axis=1))[0]
@@ -583,11 +566,14 @@ def mp_experiment(grid_idx, dataset, random_state, add_trees,
         anch_end_time = timeit.default_timer()
         anch_elapsed_time = anch_end_time - anch_start_time
 
+    # save the tabular results to a file
     output_df = DataFrame(output, columns=headers)
-    output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '_rnst_' + str(random_state) + "_addt_" + str(add_trees) + '_timetest.csv'))
-    # save the full results object
-    results_store = open(mydata.pickle_path('results' + '_rnst_' + str(random_state) + "_addt_" + str(add_trees) + '.pickle'), "wb")
-    pickle.dump(results, results_store)
-    results_store.close()
+    output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '_rnst_' + str(mydata.random_state) + "_addt_" + str(add_trees) + '_timetest.csv'))
+    # save the full rule_acc_lite objects
+    completed_rule_accs_store = open(mydata.pickle_path('completed_rule_accs' + '_rnst_' + str(mydata.random_state) + "_addt_" + str(add_trees) + '.pickle'), "wb")
+    pickle.dump(completed_rule_accs, completed_rule_accs_store)
+    completed_rule_accs_store.close()
 
-    return(results, output_df, wb_elapsed_time + wbres_elapsed_time, anch_elapsed_time, grid_idx)
+    print('completed experiment for random_state ' + str(mydata.random_state) + ' and ' +str(add_trees) + ' additional trees')
+    # pass the elapsed times up to the caller
+    return(wb_elapsed_time + wbres_elapsed_time, anch_elapsed_time, grid_idx)

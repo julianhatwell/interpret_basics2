@@ -712,7 +712,8 @@ def grid_experiment_mp(grid):
         iv_low = grid.loc[g].iv_low
         iv_high = grid.loc[g].iv_high
         # ugly code because args must be ordered tuple, no keywords are working
-        results.append(pool.apply_async(mp_experiment_scratch, (grid_idx, dataset, random_state, add_trees,
+        # results are just the elapsed times and grid ids. The output objects have been saved to file as a side effect
+        results.append(pool.apply_async(mp_experiment, (grid_idx, dataset, random_state, add_trees,
                                                                 override_tuning, n_instances, n_batches,
                                                                 eval_model, alpha_scores, alpha_paths,
                                                                 support_paths, precis_threshold, run_anchors,
