@@ -14,6 +14,7 @@ from itertools import chain
 from copy import deepcopy
 from scipy.stats import chi2_contingency
 from forest_surveyor import config as cfg
+from forest_surveyor.async_structures import tree_walk
 
 class default_encoder:
 
@@ -631,13 +632,14 @@ class forest_walker:
 
     def forest_walk(self, instances, labels = None):
 
+        # this might benefit from multiprocessing
         tree_paths = [[]] * len(self.forest.estimators_)
         for i, t in enumerate(self.forest.estimators_):
             tree_paths[i] = self.tree_walk(tree = t
                                        , instances = instances
                                        , labels = labels
                                        , features = self.features)
-
+        # would need to return paths in correct order
         return(paths_container(tree_paths, True))
 
 class batch_getter:

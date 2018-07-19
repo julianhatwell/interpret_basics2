@@ -11,6 +11,7 @@
 *.txt
 *.png
 *.pickle
+best_param*
 /.ipynb_checkpoints
 /__pycache__
 /adult_pickles
