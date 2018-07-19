@@ -3,16 +3,16 @@ from forest_surveyor import p_count, p_count_corrected
 from collections import deque
 from scipy import sparse
 
-def tree_walk(self, tree, instances, labels = None, features = None):
+def as_tree_walk(f_walker, tree_idx, tree, instances, labels = None, features = None):
 
     n_instances = instances.shape[0]
     instance_ids = instances.index.tolist()
     # encode features prior to sending into tree for path analysis
-    if self.encoder is None:
+    if f_walker.encoder is None:
         instances = np.matrix(instances)
         n_features = instances.shape[1]
     else:
-        instances = self.encoder.transform(instances)
+        instances = f_walker.encoder.transform(instances)
         if 'todense' in dir(instances): # it's a sparse matrix
             instances = instances.todense()
         n_features = instances.shape[1]
@@ -22,8 +22,8 @@ def tree_walk(self, tree, instances, labels = None, features = None):
     threshold = tree.tree_.threshold
     # predictions from tree
     tree_pred = tree.predict(instances)
-    if self.get_label is not None:
-        tree_pred_labels = self.get_label(self.class_col, tree_pred.astype(int))
+    if f_walker.get_label is not None:
+        tree_pred_labels = f_walker.get_label(f_walker.class_col, tree_pred.astype(int))
     else:
         tree_pred_labels = tree_pred
     tree_pred_proba = tree.predict_proba(instances)
@@ -76,4 +76,4 @@ def tree_walk(self, tree, instances, labels = None, features = None):
             instance_paths[ic]['path']['threshold'].append(threshold[p])
             instance_paths[ic]['path']['leq_threshold'].append(leq_threshold)
 
-    return(instance_paths)
+    return(tree_idx, instance_paths)

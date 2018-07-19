@@ -9,6 +9,7 @@ from forest_surveyor import p_count, p_count_corrected
 import forest_surveyor.datasets as ds
 from forest_surveyor.plotting import plot_confusion_matrix
 from forest_surveyor.structures import rule_accumulator, forest_walker, batch_getter, rule_tester, loo_encoder
+from forest_surveyor.async_routines import as_chirps_explanation
 
 from scipy.stats import chi2_contingency
 from math import sqrt
@@ -144,56 +145,40 @@ def run_batches(f_walker, getter,
     completed_rule_accs = [[]] * (batch_size * n_batches)
 
     for b in range(n_batches):
-        print('walking forest for batch ' + str(b))
+        print('walking forest for batch ' + str(b) + ' of batch size ' + str(batch_size))
         instances, labels = getter.get_next(batch_size)
         instance_ids = labels.index.tolist()
         # get all the tree paths instance by instance
-        walked = f_walker.forest_walk(instances = instances
-                                , labels = labels)
+        forest_walk_start_time = timeit.default_timer()
 
+        forest_walk_async = False
+        walked = f_walker.forest_walk(instances = instances
+                                , labels = labels
+                                , async = forest_walk_async)
+
+        forest_walk_end_time = timeit.default_timer()
+        forest_walk_elapsed_time = forest_walk_end_time - forest_walk_start_time
+
+        print('Forest Walk time elapsed:', "{:0.4f}".format(forest_walk_elapsed_time), 'seconds')
+        print('Forest Walk with async = ' + str(forest_walk_async))
         # rearrange paths by instances
         walked.flip()
 
+        chirps_explanation_async = False
+        ce_start_time = timeit.default_timer()
         for i in range(batch_size):
+            completed_rule_accs[b * batch_size + i] = as_chirps_explanation(f_walker,
+            walked, i, data_container, instance_ids,
+            encoder, sample_instances, sample_labels,
+            support_paths, alpha_paths,
+            disc_path_bins, disc_path_eqcounts,
+            alpha_scores, which_trees, precis_threshold)
+        ce_end_time = timeit.default_timer()
+        ce_elapsed_time = ce_end_time - ce_start_time
 
-            # process the path info for freq patt mining
-            walked.set_paths(i, which_trees=which_trees)
-            walked.discretize_paths(data_container.var_dict,
-                                    bins=disc_path_bins,
-                                    equal_counts=disc_path_eqcounts)
-            # the pattens are found but not scored and sorted yet
-            walked.set_patterns(support=support_paths, alpha=alpha_paths, sort=False)
-            # the patterns will be weighted by chi**2 for independence test, p-values
-            weights = [] * len(walked.patterns)
-            for wp in walked.patterns:
-                rt = rule_tester(data_container=data_container,
-                rule=wp,
-                sample_instances=sample_instances)
-                rt.sample_instances = encoder.transform(rt.sample_instances)
-                idx = rt.apply_rule()
-                covered = p_count_corrected(sample_labels[idx], [i for i in range(len(data_container.class_names))])['counts']
-                not_covered = p_count_corrected(sample_labels[~idx], [i for i in range(len(data_container.class_names))])['counts']
-                observed = np.array((covered, not_covered))
-                # weights.append(sqrt(chi2_contingency(observed=observed, correction=True)[0]))
+        print('Chirps batch time elapsed:', "{:0.4f}".format(ce_elapsed_time), 'seconds')
+        print('Chirps batch with async = ' + str(chirps_explanation_async))
 
-                if covered.sum() > 0 and not_covered.sum() > 0: # previous_counts.sum() == 0 is impossible
-                    weights.append(sqrt(chi2_contingency(observed=observed[:, np.where(observed.sum(axis=0) != 0)], correction=True)[0]))
-                else:
-                    weights.append(max(weights))
-
-            # now the patterns are scored and sorted
-            walked.set_patterns(support=support_paths, alpha=alpha_paths, sort=True, weights=weights) # with chi2 and support sorting
-            # walked.set_patterns(support=support_paths, alpha=alpha_paths, sort=True) # with only support sorting
-
-            # re-run the profile to greedy precis
-            ra_gprec = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_ids[i])
-            ra_gprec.profile(encoder=encoder, sample_instances=sample_instances, sample_labels=sample_labels, greedy='precision', prediction_model=f_walker.prediction_model, precis_threshold=precis_threshold)
-            ra_gprec.prune_rule()
-            ra_gprec_lite = ra_gprec.lite_instance()
-            # del ra_gprec
-
-            # collect completed rule accumulator
-            completed_rule_accs[b * batch_size + i] = [ra_gprec_lite]
 
     algorithm = ['greedy_prec'] # this method proved to be the best. For alternatives, go to the github and see older versions
     return(completed_rule_accs, algorithm)
