@@ -22,7 +22,7 @@ def experiment(grid_idx, dataset, random_state, add_trees,
                     eval_model, alpha_scores, alpha_paths,
                     support_paths, precis_threshold, run_anchors,
                     which_trees, disc_path_bins, disc_path_eqcounts,
-                    iv_low, iv_high):
+                    iv_low, iv_high, forest_walk_async, chirps_explanation_async):
 
     print('starting new run for random_state ' + str(random_state) + ' and ' + str(add_trees) + ' additional trees')
     # load data set
@@ -93,7 +93,9 @@ def experiment(grid_idx, dataset, random_state, add_trees,
      which_trees=which_trees,
      precis_threshold=precis_threshold,
      batch_size=batch_size,
-     n_batches=n_batches)
+     n_batches=n_batches,
+     forest_walk_async=forest_walk_async,
+     chirps_explanation_async=chirps_explanation_async)
 
     wb_end_time = timeit.default_timer()
     wb_elapsed_time = wb_end_time - wb_start_time
@@ -387,7 +389,9 @@ def grid_experiment_mp(grid):
                 disc_path_bins = grid.loc[g].disc_path_bins,
                 disc_path_eqcounts = grid.loc[g].disc_path_eqcounts,
                 iv_low = grid.loc[g].iv_low,
-                iv_high = grid.loc[g].iv_high))
+                iv_high = grid.loc[g].iv_high,
+                forest_walk_async = grid.loc[g].forest_walk_async,
+                chirps_explanation_async = grid.loc[g].chirps_explanation_async))
 
     print('Completed ' + str(len(grid)) + ' run(s)')
     print()

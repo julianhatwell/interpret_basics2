@@ -139,7 +139,8 @@ def run_batches(f_walker, getter,
  batch_size = 1, n_batches = 1,
  support_paths=0.1, alpha_paths=0.5,
  disc_path_bins=4, disc_path_eqcounts=False,
- alpha_scores=0.5, which_trees='majority', precis_threshold=0.95):
+ alpha_scores=0.5, which_trees='majority', precis_threshold=0.95,
+ forest_walk_async=False, chirps_explanation_async=False):
 
     # create a list to collect completed rule accumulators
     completed_rule_accs = [[]] * (batch_size * n_batches)
@@ -151,7 +152,6 @@ def run_batches(f_walker, getter,
         # get all the tree paths instance by instance
         forest_walk_start_time = timeit.default_timer()
 
-        forest_walk_async = False
         walked = f_walker.forest_walk(instances = instances
                                 , labels = labels
                                 , async = forest_walk_async)
@@ -164,20 +164,48 @@ def run_batches(f_walker, getter,
         # rearrange paths by instances
         walked.flip()
 
-        chirps_explanation_async = False
         ce_start_time = timeit.default_timer()
-        for i in range(batch_size):
-            completed_rule_accs[b * batch_size + i] = as_chirps_explanation(f_walker,
-            walked, i, data_container, instance_ids,
-            encoder, sample_instances, sample_labels,
-            support_paths, alpha_paths,
-            disc_path_bins, disc_path_eqcounts,
-            alpha_scores, which_trees, precis_threshold)
-        ce_end_time = timeit.default_timer()
-        ce_elapsed_time = ce_end_time - ce_start_time
+        if chirps_explanation_async:
+            chp_start_time = timeit.default_timer()
+            async_out = []
+            n_cores = mp.cpu_count()-1
+            pool = mp.Pool(processes=n_cores)
+            for i in range(batch_size):
+                async_out.append(pool.apply_async(as_chirps_explanation,
+                    (f_walker,
+                    walked, i, data_container, instance_ids,
+                    encoder, sample_instances, sample_labels,
+                    support_paths, alpha_paths,
+                    disc_path_bins, disc_path_eqcounts,
+                    alpha_scores, which_trees, precis_threshold)
+                ))
 
-        print('Chirps batch time elapsed:', "{:0.4f}".format(ce_elapsed_time), 'seconds')
-        print('Chirps batch with async = ' + str(chirps_explanation_async))
+            # block and collect the pool
+            pool.close()
+            pool.join()
+
+            # get the async results and sort to ensure original batch index order and remove batch index
+            ce = [async_out[j].get() for j in range(len(async_out))]
+            ce.sort()
+            for i in range(batch_size):
+                completed_rule_accs[b * batch_size + i] = ce[i][1]
+
+            ce_end_time = timeit.default_timer()
+            ce_elapsed_time = ce_end_time - ce_start_time
+            
+        else:
+            for i in range(batch_size):
+                _, completed_rule_accs[b * batch_size + i] = as_chirps_explanation(f_walker,
+                walked, i, data_container, instance_ids,
+                encoder, sample_instances, sample_labels,
+                support_paths, alpha_paths,
+                disc_path_bins, disc_path_eqcounts,
+                alpha_scores, which_trees, precis_threshold)
+            ce_end_time = timeit.default_timer()
+            ce_elapsed_time = ce_end_time - ce_start_time
+
+        print('CHIRPS batch time elapsed:', "{:0.4f}".format(ce_elapsed_time), 'seconds')
+        print('CHIRPS batch with async = ' + str(chirps_explanation_async))
 
 
     algorithm = ['greedy_prec'] # this method proved to be the best. For alternatives, go to the github and see older versions

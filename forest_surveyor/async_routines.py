@@ -58,4 +58,4 @@ def as_chirps_explanation(f_walker, walked, batch_idx, data_container, instance_
         ra_gprec_lite = ra_gprec.lite_instance()
 
         # collect completed rule accumulator
-        return([ra_gprec_lite])
+        return(batch_idx, [ra_gprec_lite])

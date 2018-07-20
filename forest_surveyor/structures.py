@@ -563,7 +563,6 @@ class forest_walker:
     def forest_walk(self, instances, labels = None, async=False):
 
         if async:
-            as_start_time = timeit.default_timer()
             async_out = []
             n_cores = mp.cpu_count()-1
             pool = mp.Pool(processes=n_cores)
@@ -574,19 +573,10 @@ class forest_walker:
             pool.close()
             pool.join()
 
-            as_end_time = timeit.default_timer()
-            as_elapsed_time = as_end_time - as_start_time
-            print('Async f_walk time elapsed:', "{:0.4f}".format(as_elapsed_time), 'seconds')
-
             # get the async results and sort to ensure original tree order and remove tree index
-
-            srt_start_time = timeit.default_timer()
             tp = [async_out[j].get() for j in range(len(async_out))]
             tp.sort()
             tree_paths = [tp[k][1] for k in range(len(tp))]
-            srt_end_time = timeit.default_timer()
-            srt_elapsed_time = srt_end_time - srt_start_time
-            print('Post Async sort time elapsed:', "{:0.4f}".format(srt_elapsed_time), 'seconds')
 
         else:
             tree_paths = [[]] * len(self.forest.estimators_)
@@ -597,7 +587,7 @@ class forest_walker:
                                             , instances = instances
                                             , labels = labels
                                             , features = self.features)
-            # would need to return paths in correct order
+            
         return(paths_container(tree_paths, True))
 
 class batch_getter:
