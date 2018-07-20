@@ -3,37 +3,12 @@ from forest_surveyor import p_count, p_count_corrected
 from collections import deque
 from scipy import sparse
 
-def as_tree_walk(f_walker, tree_idx, tree, instances, labels = None, features = None):
+def as_tree_walk(tree_idx, instances, labels,
+                instance_ids, n_instances,
+                tree_pred, tree_pred_labels,
+                tree_pred_proba, tree_correct,
+                feature, threshold, path, features):
 
-    n_instances = instances.shape[0]
-    instance_ids = instances.index.tolist()
-    # encode features prior to sending into tree for path analysis
-    if f_walker.encoder is None:
-        instances = np.matrix(instances)
-        n_features = instances.shape[1]
-    else:
-        instances = f_walker.encoder.transform(instances)
-        if 'todense' in dir(instances): # it's a sparse matrix
-            instances = instances.todense()
-        n_features = instances.shape[1]
-
-    # structural objects from tree
-    feature = tree.tree_.feature
-    threshold = tree.tree_.threshold
-    # predictions from tree
-    tree_pred = tree.predict(instances)
-    if f_walker.get_label is not None:
-        tree_pred_labels = f_walker.get_label(f_walker.class_col, tree_pred.astype(int))
-    else:
-        tree_pred_labels = tree_pred
-    tree_pred_proba = tree.predict_proba(instances)
-
-    if labels is None:
-        tree_correct = [None] * n_instances
-    else:
-        tree_correct = tree_pred == labels.values
-
-    path = tree.decision_path(instances).indices
     path_deque = deque(path)
     ic = -1 # instance_count
     instance_paths = [{}] * n_instances

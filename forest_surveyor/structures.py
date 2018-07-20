@@ -560,14 +560,64 @@ class forest_walker:
         statistics['all_classes'] = self.forest_stats_by_label()
         return(statistics)
 
+    def tree_structures(self, tree, instances, labels, n_instances):
+
+        # structural objects from tree
+        feature = tree.tree_.feature
+        threshold = tree.tree_.threshold
+        path = tree.decision_path(instances).indices
+
+        # predictions from tree
+        tree_pred = tree.predict(instances)
+        tree_pred_proba = tree.predict_proba(instances)
+
+        if labels is None:
+            tree_correct = [None] * n_instances
+        else:
+            tree_correct = tree_pred == labels.values
+
+        if labels is not None:
+            tree_pred_labels = self.get_label(self.class_col, tree_pred.astype(int))
+        else:
+            tree_pred_labels = tree_pred
+
+        return(tree_pred, tree_pred_labels, tree_pred_proba, tree_correct, feature, threshold, path)
+
     def forest_walk(self, instances, labels = None, async=False):
+
+        features = self.features
+        n_instances = instances.shape[0]
+        instance_ids = instances.index.tolist()
+
+        # encode features prior to sending into tree for path analysis
+        if self.encoder is None:
+            instances = np.matrix(instances)
+            n_features = instances.shape[1]
+        else:
+            instances = self.encoder.transform(instances)
+            if 'todense' in dir(instances): # it's a sparse matrix
+                instances = instances.todense()
+            n_features = instances.shape[1]
 
         if async:
             async_out = []
             n_cores = mp.cpu_count()-1
             pool = mp.Pool(processes=n_cores)
+
             for i, t in enumerate(self.forest.estimators_):
-                async_out.append(pool.apply_async(as_tree_walk, (self, i, t, instances, labels, self.features)))
+
+                # process the tree
+                tree_pred, tree_pred_labels, \
+                tree_pred_proba, tree_correct, \
+                feature, threshold, path = self.tree_structures(t, instances, labels, n_instances)
+                # walk the tree
+                async_out.append(pool.apply_async(as_tree_walk,
+                                                (i, instances, labels,
+                                                instance_ids, n_instances,
+                                                tree_pred, tree_pred_labels,
+                                                tree_pred_proba, tree_correct,
+                                                feature, threshold, path, features)
+                                                ))
 
             # block and collect the pool
             pool.close()
@@ -581,13 +631,18 @@ class forest_walker:
         else:
             tree_paths = [[]] * len(self.forest.estimators_)
             for i, t in enumerate(self.forest.estimators_):
-                _, tree_paths[i] = as_tree_walk(f_walker = self
-                                            , tree_idx = i
-                                            , tree = t
-                                            , instances = instances
-                                            , labels = labels
-                                            , features = self.features)
-            
+
+                # process the tree
+                tree_pred, tree_pred_labels, \
+                tree_pred_proba, tree_correct, \
+                feature, threshold, path = self.tree_structures(t, instances, labels, n_instances)
+                # walk the tree
+                _, tree_paths[i] = as_tree_walk(i, instances, labels,
+                                                instance_ids, n_instances,
+                                                tree_pred, tree_pred_labels,
+                                                tree_pred_proba, tree_correct,
+                                                feature, threshold, path, features)
+
         return(paths_container(tree_paths, True))
 
 class batch_getter:
