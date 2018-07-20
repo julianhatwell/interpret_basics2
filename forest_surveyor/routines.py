@@ -134,14 +134,64 @@ def forest_survey(f_walker, X, y):
     f_walker.full_survey(X, y)
     return(f_walker.forest_stats(np.unique(y)))
 
-def run_batches(f_walker, getter,
+def mine_path_segments(batch_idx, walked, data_container,
+                        support_paths=0.1, alpha_paths=0.5,
+                        disc_path_bins=4, disc_path_eqcounts=False,
+                        which_trees='majority'):
+
+    # rearrange paths by instances
+    walked.flip()
+    # process the path info for freq patt mining
+    # first set the paths property on selected trees e.g. majority
+    walked.set_paths(batch_idx, which_trees=which_trees)
+    # discretize any numeric features
+    walked.discretize_paths(data_container.var_dict,
+                            bins=disc_path_bins,
+                            equal_counts=disc_path_eqcounts)
+    # the patterns are found but not scored and sorted yet
+    walked.set_patterns(support=support_paths, alpha=alpha_paths, sort=False)
+    return(walked)
+
+def score_sort_path_segments(walked, data_container,
+                                sample_instances, sample_labels,
+                                encoder, support_paths=0.1, alpha_paths=0.5,
+                                weighting='chisq'):
+    # the patterns will be weighted by chi**2 for independence test, p-values
+    if weighting == 'chisq':
+        weights = [] * len(walked.patterns)
+        for wp in walked.patterns:
+            rt = rule_tester(data_container=data_container,
+                            rule=wp,
+                            sample_instances=sample_instances)
+            rt.sample_instances = encoder.transform(rt.sample_instances)
+            idx = rt.apply_rule()
+            covered = p_count_corrected(sample_labels[idx], [i for i in range(len(data_container.class_names))])['counts']
+            not_covered = p_count_corrected(sample_labels[~idx], [i for i in range(len(data_container.class_names))])['counts']
+            observed = np.array((covered, not_covered))
+
+            # this is the chisq based weighting. can add other options
+            if covered.sum() > 0 and not_covered.sum() > 0: # previous_counts.sum() == 0 is impossible
+                weights.append(sqrt(chi2_contingency(observed=observed[:, np.where(observed.sum(axis=0) != 0)], correction=True)[0]))
+            else:
+                weights.append(max(weights))
+
+        # now the patterns are scored and sorted
+        walked.set_patterns(support=support_paths, alpha=alpha_paths, sort=True, weights=weights) # with chi2 and support sorting
+    else:
+        walked.set_patterns(support=support_paths, alpha=alpha_paths, sort=True) # with only support sorting
+    return(walked)
+
+
+def run_batch_explanations(f_walker, getter,
  data_container, encoder, sample_instances, sample_labels,
  batch_size = 1, n_batches = 1,
  support_paths=0.1, alpha_paths=0.5,
  disc_path_bins=4, disc_path_eqcounts=False,
- alpha_scores=0.5, which_trees='majority', precis_threshold=0.95,
+ alpha_scores=0.5, which_trees='majority',
+ precis_threshold=0.95, weighting='chisq', greedy='greedy',
  forest_walk_async=False, chirps_explanation_async=False):
 
+    pred_model = f_walker.prediction_model
     # create a list to collect completed rule accumulators
     completed_rule_accs = [[]] * (batch_size * n_batches)
 
@@ -161,8 +211,6 @@ def run_batches(f_walker, getter,
 
         print('Forest Walk time elapsed:', "{:0.4f}".format(forest_walk_elapsed_time), 'seconds')
         print('Forest Walk with async = ' + str(forest_walk_async))
-        # rearrange paths by instances
-        walked.flip()
 
         ce_start_time = timeit.default_timer()
         if chirps_explanation_async:
@@ -170,14 +218,23 @@ def run_batches(f_walker, getter,
             async_out = []
             n_cores = mp.cpu_count()-1
             pool = mp.Pool(processes=n_cores)
-            for i in range(batch_size):
+            for batch_idx in range(batch_size):
+                instance_id = instance_ids[batch_idx]
+                # process the path segments
+                walked = mine_path_segments(batch_idx, walked, data_container,
+                                        support_paths, alpha_paths,
+                                        disc_path_bins, disc_path_eqcounts,
+                                        which_trees)
+                walked = score_sort_path_segments(walked, data_container,
+                                                sample_instances, sample_labels,
+                                                encoder, support_paths, alpha_paths,
+                                                weighting)
+                # create a rule_accumulator
+                ra = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_id)
+
                 async_out.append(pool.apply_async(as_chirps_explanation,
-                    (f_walker,
-                    walked, i, data_container, instance_ids,
-                    encoder, sample_instances, sample_labels,
-                    support_paths, alpha_paths,
-                    disc_path_bins, disc_path_eqcounts,
-                    alpha_scores, which_trees, precis_threshold)
+                    (ra, batch_idx, encoder, sample_instances, sample_labels,
+                    pred_model, greedy, precis_threshold)
                 ))
 
             # block and collect the pool
@@ -187,20 +244,31 @@ def run_batches(f_walker, getter,
             # get the async results and sort to ensure original batch index order and remove batch index
             ce = [async_out[j].get() for j in range(len(async_out))]
             ce.sort()
-            for i in range(batch_size):
-                completed_rule_accs[b * batch_size + i] = ce[i][1]
+            for batch_idx in range(batch_size):
+                completed_rule_accs[b * batch_size + batch_idx] = ce[batch_idx][1]
 
             ce_end_time = timeit.default_timer()
             ce_elapsed_time = ce_end_time - ce_start_time
-            
+
         else:
-            for i in range(batch_size):
-                _, completed_rule_accs[b * batch_size + i] = as_chirps_explanation(f_walker,
-                walked, i, data_container, instance_ids,
+            for batch_idx in range(batch_size):
+                instance_id = instance_ids[batch_idx]
+                # process the path segments
+                walked = mine_path_segments(batch_idx, walked, data_container,
+                                        support_paths, alpha_paths,
+                                        disc_path_bins, disc_path_eqcounts,
+                                        which_trees)
+                walked = score_sort_path_segments(walked, data_container,
+                                                sample_instances, sample_labels,
+                                                encoder, support_paths, alpha_paths,
+                                                weighting)
+                # create a rule_accumulator
+                ra = rule_accumulator(data_container=data_container, paths_container=walked, instance_id=instance_id)
+
+                _, completed_rule_accs[b * batch_size + batch_idx] = as_chirps_explanation(
+                ra, batch_idx,
                 encoder, sample_instances, sample_labels,
-                support_paths, alpha_paths,
-                disc_path_bins, disc_path_eqcounts,
-                alpha_scores, which_trees, precis_threshold)
+                pred_model, greedy, precis_threshold)
             ce_end_time = timeit.default_timer()
             ce_elapsed_time = ce_end_time - ce_start_time
 

@@ -8,7 +8,7 @@ import multiprocessing as mp
 from forest_surveyor import p_count, p_count_corrected
 import forest_surveyor.datasets as ds
 from forest_surveyor.structures import forest_walker, batch_getter, rule_tester, loo_encoder
-from forest_surveyor.routines import tune_rf, train_rf, evaluate_model, run_batches, anchors_preproc, anchors_explanation
+from forest_surveyor.routines import tune_rf, train_rf, evaluate_model, run_batch_explanations, anchors_preproc, anchors_explanation
 from scipy.stats import chi2_contingency
 from math import sqrt
 from sklearn.metrics import confusion_matrix, cohen_kappa_score, precision_recall_fscore_support, accuracy_score
@@ -22,7 +22,9 @@ def experiment(grid_idx, dataset, random_state, add_trees,
                     eval_model, alpha_scores, alpha_paths,
                     support_paths, precis_threshold, run_anchors,
                     which_trees, disc_path_bins, disc_path_eqcounts,
-                    iv_low, iv_high, forest_walk_async, chirps_explanation_async):
+                    iv_low, iv_high,
+                    weighting, greedy,
+                    forest_walk_async, chirps_explanation_async):
 
     print('starting new run for random_state ' + str(random_state) + ' and ' + str(add_trees) + ' additional trees')
     # load data set
@@ -79,7 +81,7 @@ def experiment(grid_idx, dataset, random_state, add_trees,
     wb_start_time = timeit.default_timer()
 
     # collect completed rule_acc_lite objects for the whole batch
-    completed_rule_accs, result_sets = run_batches(f_walker=f_walker,
+    completed_rule_accs, result_sets = run_batch_explanations(f_walker=f_walker,
      getter=getter,
      data_container=mydata,
      encoder=tt['encoder'],
@@ -94,6 +96,8 @@ def experiment(grid_idx, dataset, random_state, add_trees,
      precis_threshold=precis_threshold,
      batch_size=batch_size,
      n_batches=n_batches,
+     weighting=weighting,
+     greedy=greedy,
      forest_walk_async=forest_walk_async,
      chirps_explanation_async=chirps_explanation_async)
 
@@ -187,6 +191,7 @@ def experiment(grid_idx, dataset, random_state, add_trees,
 
     wbres_end_time = timeit.default_timer()
     wbres_elapsed_time = wbres_end_time - wbres_start_time
+    print('CHIRPS batch results eval time elapsed:', "{:0.4f}".format(wbres_elapsed_time), 'seconds')
     # this completes the CHIRPS runs
 
     # run anchors if requested
@@ -390,6 +395,8 @@ def grid_experiment_mp(grid):
                 disc_path_eqcounts = grid.loc[g].disc_path_eqcounts,
                 iv_low = grid.loc[g].iv_low,
                 iv_high = grid.loc[g].iv_high,
+                weighting = grid.loc[g].weighting,
+                greedy = grid.loc[g].greedy,
                 forest_walk_async = grid.loc[g].forest_walk_async,
                 chirps_explanation_async = grid.loc[g].chirps_explanation_async))
 
