@@ -215,15 +215,91 @@ class data_container:
                 return(lt_gt(x,y,z))
         return(' AND '.join([bin_or_cont(f, t, v, self.onehot_dict) for f, t, v in rule]))
 
-class paths_container:
+class instance_paths_container:
+    def __init__(self
+    , paths
+    , tree_preds
+    , patterns=None
+    , instance_id=None):
+        self.paths = paths
+        self.tree_preds = tree_preds
+        self.patterns = patterns
+        self.instance_id = instance_id
+
+    def discretize_paths(self, var_dict, bins=4, equal_counts=False):
+        # check if bins is not numeric or can't be cast, then force equal width (equal_counts = False)
+        if equal_counts:
+            def hist_func(x, bins):
+                npt = len(x)
+                return np.interp(np.linspace(0, npt, bins + 1),
+                                 np.arange(npt),
+                                 np.sort(x))
+        else:
+            def hist_func(x, bins):
+                return(np.histogram(x, bins))
+
+        cont_vars = [vn for vn in var_dict if var_dict[vn]['data_type'] == 'continuous' and var_dict[vn]['class_col'] == False]
+        for feature in cont_vars:
+        # nan warnings OK, it just means the less than or greater than test was never used
+            # lower bound, greater than
+            lowers = [item[2] for nodes in self.paths for item in nodes if item[0] == feature and item[1] == False]
+
+            # upper bound, less than
+            uppers = [item[2] for nodes in self.paths for item in nodes if item[0] == feature and item[1] == True]
+
+            upper_bins = np.histogram(uppers, bins=bins)[1]
+            lower_bins = np.histogram(lowers, bins=bins)[1]
+
+            # upper_bin_midpoints = pd.Series(upper_bins).rolling(window=2, center=False).mean().values[1:]
+            upper_bin_means = (np.histogram(uppers, upper_bins, weights=uppers)[0] /
+                                np.histogram(uppers, upper_bins)[0]).round(5)
+
+            # lower_bin_midpoints = pd.Series(lower_bins).rolling(window=2, center=False).mean().values[1:]
+            lower_bin_means = (np.histogram(lowers, lower_bins, weights=lowers)[0] /
+                                np.histogram(lowers, lower_bins)[0]).round(5)
+
+            # discretize functions from histogram means
+            upper_discretize = lambda x: upper_bin_means[np.max([np.min([np.digitize(x, upper_bins), len(upper_bin_means)]), 1]) - 1]
+            lower_discretize = lambda x: lower_bin_means[np.max([np.min([np.digitize(x, lower_bins, right= True), len(upper_bin_means)]), 1]) - 1]
+
+            paths_discretized = []
+            for nodes in self.paths:
+                nodes_discretized = []
+                for f, t, v in nodes:
+                    if f == feature:
+                        if t == False: # greater than, lower bound
+                            v = lower_discretize(v)
+                        else:
+                            v = upper_discretize(v)
+                    nodes_discretized.append((f, t, v))
+                paths_discretized.append(nodes_discretized)
+            # at the end of each loop, update the instance variable
+            self.paths = paths_discretized
+
+    def mine_patterns(self, support=0.1):
+        # convert to an absolute number of instances rather than a fraction
+        if support < 1:
+            support = round(support * len(self.paths))
+        self.patterns = find_frequent_patterns(self.paths, support)
+
+    def sort_patterns(self, alpha=0.0, weights=None):
+        alpha = float(alpha)
+        if weights is None:
+            weights = [1] * len(self.patterns)
+        fp_scope = self.patterns.copy()
+        # to shrink the support of shorter freq_patterns
+        # formula is sqrt(weight) * log(sup * (len - alpha) / len)
+        score_function = lambda x, w: (x[0], x[1], math.sqrt(w) * math.log(x[1]) * (len(x[0]) - alpha) / len(x[0]))
+        fp_scope = [fp for fp in map(score_function, fp_scope.items(), weights)]
+        # score is now at position 2 of tuple
+        self.patterns = sorted(fp_scope, key=itemgetter(2), reverse = True)
+
+class batch_paths_container:
     def __init__(self
     , path_detail
     , by_tree):
         self.by_tree = by_tree
         self.path_detail = path_detail
-        self.instance = None
-        self.paths = None
-        self.patterns = None
 
     def flip(self):
         n = len(self.path_detail[0])
@@ -233,11 +309,11 @@ class paths_container:
         self.path_detail = flipped_paths
         self.by_tree = not self.by_tree
 
-    def major_class_from_paths(self, return_counts=True):
+    def major_class_from_paths(self, batch_idx, return_counts=True):
         if self.by_tree:
-            pred_classes = [self.path_detail[i][self.instance]['pred_class'] for i in range(len(self.path_detail))]
+            pred_classes = [self.path_detail[p][batch_idx]['pred_class'] for p in range(len(self.path_detail))]
         else:
-            pred_classes = [self.path_detail[self.instance][i]['pred_class'] for i in range(len(self.path_detail[self.instance]))]
+            pred_classes = [self.path_detail[batch_idx][p]['pred_class'] for p in range(len(self.path_detail[batch_idx]))]
 
         unique, counts = np.unique(pred_classes, return_counts=True)
 
@@ -245,36 +321,40 @@ class paths_container:
             return(unique[np.argmax(counts)], dict(zip(unique, counts)))
         else: return(unique[np.argmax(counts)])
 
-    def set_paths(self, instance, which_trees='all', feature_values=True):
-        # i hate this code. must improve and de-dup!
-        self.instance = math.floor(instance) # make sure it's an integer
+    def get_instance_paths(self, batch_idx, which_trees='all', feature_values=True):
+        # It is a sequence number in the batch of instance_paths that have been walked
+        # Each path is the route of one instance down one tree
+
+        batch_idx = math.floor(batch_idx) # make sure it's an integer
         true_to_lt = lambda x: '<' if x == True else '>'
 
+        # extract the paths we want by filtering on tree performance
         if self.by_tree:
             n_paths = len(self.path_detail)
             if which_trees == 'correct':
-                paths_info = [self.path_detail[i][self.instance]['path'] for i in range(n_paths) if self.path_detail[i][self.instance]['tree_correct']]
+                paths_info = [self.path_detail[pd][batch_idx]['path'] for pd in range(n_paths) if self.path_detail[pd][batch_idx]['tree_correct']]
             elif which_trees == 'majority':
-                major_class = self.major_class_from_paths(return_counts=False)
-                paths_info = [self.path_detail[i][self.instance]['path'] for i in range(n_paths) if self.path_detail[i][self.instance]['pred_class'] == major_class]
+                major_class = self.major_class_from_paths(batch_idx, return_counts=False)
+                paths_info = [self.path_detail[pd][batch_idx]['path'] for pd in range(n_paths) if self.path_detail[pd][batch_idx]['pred_class'] == major_class]
             elif which_trees == 'minority':
-                major_class = self.major_class_from_paths(return_counts=False)
-                paths_info = [self.path_detail[i][self.instance]['path'] for i in range(n_paths) if self.path_detail[i][self.instance]['pred_class'] != major_class]
+                major_class = self.major_class_from_paths(batch_idx, return_counts=False)
+                paths_info = [self.path_detail[pd][batch_idx]['path'] for pd in range(n_paths) if self.path_detail[pd][batch_idx]['pred_class'] != major_class]
             else:
-                paths_info = [self.path_detail[i][self.instance]['path'] for i in range(n_paths)]
+                paths_info = [self.path_detail[pd][batch_idx]['path'] for pd in range(n_paths)]
         else:
-            n_paths = len(self.path_detail[self.instance])
+            n_paths = len(self.path_detail[batch_idx])
             if which_trees == 'correct':
-                paths_info = [self.path_detail[self.instance][i]['path'] for i in range(n_paths) if self.path_detail[self.instance][i]['tree_correct']]
+                paths_info = [self.path_detail[batch_idx][pd]['path'] for pd in range(n_paths) if self.path_detail[batch_idx][pd]['tree_correct']]
             elif which_trees == 'majority':
-                major_class = self.major_class_from_paths(return_counts=False)
-                paths_info = [self.path_detail[self.instance][i]['path'] for i in range(n_paths) if self.path_detail[self.instance][i]['pred_class'] == major_class]
+                major_class = self.major_class_from_paths(batch_idx, return_counts=False)
+                paths_info = [self.path_detail[batch_idx][pd]['path'] for pd in range(n_paths) if self.path_detail[batch_idx][pd]['pred_class'] == major_class]
             elif which_trees == 'minority':
-                major_class = self.major_class_from_paths(return_counts=False)
-                paths_info = [self.path_detail[self.instance][i]['path'] for i in range(n_paths) if self.path_detail[self.instance][i]['pred_class'] != major_class]
+                major_class = self.major_class_from_paths(batch_idx, return_counts=False)
+                paths_info = [self.path_detail[batch_idx][pd]['path'] for pd in range(n_paths) if self.path_detail[batch_idx][pd]['pred_class'] != major_class]
             else:
-                paths_info = [self.path_detail[self.instance][i]['path'] for i in range(n_paths)]
+                paths_info = [self.path_detail[batch_idx][pd]['path'] for pd in range(n_paths)]
 
+        # path formatting - should it be on values level or features level
         if feature_values:
             paths = [[]] * len(paths_info)
             for i, p in enumerate(paths_info):
@@ -282,78 +362,15 @@ class paths_container:
         else:
             paths = [p['feature_name'] for p in paths_info]
 
-        self.paths = paths
+        # tree performance stats
+        if self.by_tree:
+            tree_preds = [self.path_detail[t][batch_idx]['pred_class_label'] for t in range(n_paths)]
+        else:
+            tree_preds = [self.path_detail[batch_idx][t]['pred_class_label'] for t in range(n_paths)]
 
-    def discretize_paths(self, var_dict, bins=4, equal_counts=False):
-
-        # can't continue without a previous run of get_paths()
-        if self.instance is not None:
-            # check if bins is not numeric or can't be cast, then force equal width (equal_counts = False)
-            if equal_counts:
-                def hist_func(x, bins):
-                    npt = len(x)
-                    return np.interp(np.linspace(0, npt, bins + 1),
-                                     np.arange(npt),
-                                     np.sort(x))
-            else:
-                def hist_func(x, bins):
-                    return(np.histogram(x, bins))
-
-            cont_vars = [vn for vn in var_dict if var_dict[vn]['data_type'] == 'continuous' and var_dict[vn]['class_col'] == False]
-            for feature in cont_vars:
-
-            # nan warnings OK, it just means the less than or greater than test was never used
-                # lower bound, greater than
-                lowers = [item[2] for nodes in self.paths for item in nodes if item[0] == feature and item[1] == False]
-
-                # upper bound, less than
-                uppers = [item[2] for nodes in self.paths for item in nodes if item[0] == feature and item[1] == True]
-
-                upper_bins = np.histogram(uppers, bins=bins)[1]
-                lower_bins = np.histogram(lowers, bins=bins)[1]
-
-                # upper_bin_midpoints = pd.Series(upper_bins).rolling(window=2, center=False).mean().values[1:]
-                upper_bin_means = (np.histogram(uppers, upper_bins, weights=uppers)[0] /
-                                    np.histogram(uppers, upper_bins)[0]).round(5)
-
-                # lower_bin_midpoints = pd.Series(lower_bins).rolling(window=2, center=False).mean().values[1:]
-                lower_bin_means = (np.histogram(lowers, lower_bins, weights=lowers)[0] /
-                                    np.histogram(lowers, lower_bins)[0]).round(5)
-
-                # discretize functions from histogram means
-                upper_discretize = lambda x: upper_bin_means[np.max([np.min([np.digitize(x, upper_bins), len(upper_bin_means)]), 1]) - 1]
-                lower_discretize = lambda x: lower_bin_means[np.max([np.min([np.digitize(x, lower_bins, right= True), len(upper_bin_means)]), 1]) - 1]
-
-                paths_discretized = []
-                for nodes in self.paths:
-                    nodes_discretized = []
-                    for f, t, v in nodes:
-                        if f == feature:
-                            if t == False: # greater than, lower bound
-                                v = lower_discretize(v)
-                            else:
-                                v = upper_discretize(v)
-                        nodes_discretized.append((f, t, v))
-                    paths_discretized.append(nodes_discretized)
-                # at the end of each loop, update the instance variable
-                self.paths = paths_discretized
-
-    def set_patterns(self, support=0.1, alpha=0.0, sort=True, weights=None):
-        # convert to an absolute number of instances rather than a fraction
-        if support < 1:
-            support = round(support * len(self.paths))
-        self.patterns = find_frequent_patterns(self.paths, support)
-        if sort:
-            alpha = float(alpha)
-            if weights is None:
-                weights = [1] * len(self.patterns)
-            fp_scope = self.patterns.copy()
-            # to shrink the support of shorter freq_patterns
-            # formula is sqrt(weight) * log(sup * (len - alpha) / len)
-            score_function = lambda x, w: (x[0], x[1], math.sqrt(w) * math.log(x[1]) * (len(x[0]) - alpha) / len(x[0]))
-            fp_scope = [fp for fp in map(score_function, fp_scope.items(), weights)]
-            # score is now at position 2 of tuple
-            self.patterns = sorted(fp_scope, key=itemgetter(2), reverse = True)
+        # return an object for requested instance
+        instance_paths = instance_paths_container(paths, tree_preds)
+        return(instance_paths)
 
 class forest_walker:
 
@@ -643,7 +660,7 @@ class forest_walker:
                                                 tree_pred_proba, tree_correct,
                                                 feature, threshold, path, features)
 
-        return(paths_container(tree_paths, True))
+        return(batch_paths_container(tree_paths, True))
 
 class batch_getter:
 
@@ -665,7 +682,7 @@ class rule_acc_lite:
                 rule, pruned_rule, conjunction_rule,
                 target_class, target_class_label,
                 major_class, major_class_label,
-                model_votes, model_post,
+                tree_preds, model_post,
                 coverage, precision, pri_and_post,
                 pri_and_post_accuracy,
                 pri_and_post_counts,
@@ -683,7 +700,7 @@ class rule_acc_lite:
         self.target_class_label = target_class_label
         self.major_class = major_class
         self.major_class_label = major_class_label
-        self.model_votes = model_votes
+        self.tree_preds = tree_preds
         self.model_post = model_post
         self.coverage = coverage
         self.precision = precision
@@ -706,7 +723,7 @@ class rule_acc_lite:
         'target_class_label' :self.target_class_label,
         'major_class' : self.major_class,
         'major_class_label' :self.major_class_label,
-        'model_votes' : self.model_votes,
+        'tree_preds' : self.tree_preds,
         'model_post' : self.model_post,
         'coverage' : self.coverage,
         'precision' : self.precision,
@@ -722,7 +739,7 @@ class rule_acc_lite:
                 self.rule, self.pruned_rule, self.conjunction_rule,
                 self.target_class, self.target_class_label,
                 self.major_class, self.major_class_label,
-                self.model_votes, self.model_post,
+                self.tree_preds, self.model_post,
                 self.coverage, self.precision, self.pri_and_post,
                 self.pri_and_post_accuracy,
                 self.pri_and_post_counts,
@@ -854,9 +871,17 @@ class rule_tester(rule_evaluator):
 
 class rule_accumulator(rule_evaluator):
 
-    def __init__(self, data_container, paths_container, instance_id):
+    def __init__(self, data_container, paths_container):
 
-        self.instance_id = instance_id
+        self.instance_id = paths_container.instance_id
+        self.random_state = data_container.random_state
+        self.onehot_features = data_container.onehot_features
+        self.onehot_dict = data_container.onehot_dict
+        self.var_dict = deepcopy(data_container.var_dict)
+        self.paths = paths_container.paths
+        self.patterns = paths_container.patterns
+        self.unapplied_rules = [i for i in range(len(self.patterns))]
+
         self.class_col = data_container.class_col
         if data_container.class_col in data_container.le_dict.keys():
             self.class_names = data_container.get_label(data_container.class_col, [i for i in range(len(data_container.class_names))])
@@ -865,17 +890,7 @@ class rule_accumulator(rule_evaluator):
             self.class_names = data_container.class_names
             self.get_label = None
 
-        self.random_state = data_container.random_state
-        self.onehot_features = data_container.onehot_features
-        self.onehot_dict = data_container.onehot_dict
-        self.var_dict = deepcopy(data_container.var_dict)
-        self.paths = paths_container.paths
-        if paths_container.by_tree:
-            self.model_votes = p_count_corrected([paths_container.path_detail[t][paths_container.instance]['pred_class_label'] for t in range(len(paths_container.paths))], self.class_names)
-        else:
-            self.model_votes = p_count_corrected([paths_container.path_detail[paths_container.instance][t]['pred_class_label'] for t in range(len(paths_container.paths))], self.class_names)
-        self.patterns = paths_container.patterns
-        self.unapplied_rules = [i for i in range(len(self.patterns))]
+        self.model_votes = p_count_corrected(paths_container.tree_preds, self.class_names)
 
         for item in self.var_dict:
             if self.var_dict[item]['class_col']:
@@ -920,7 +935,7 @@ class rule_accumulator(rule_evaluator):
         self.pri_and_post_lift = None
         self.isolation_pos = None
         self.stopping_param = None
-        self.profile_iter = None
+        self.build_rule_iter = None
 
     def add_rule(self, p_total = 0.1):
         self.previous_rule = deepcopy(self.rule)
@@ -1043,7 +1058,7 @@ class rule_accumulator(rule_evaluator):
             self.reverted.append(False)
             return(False)
 
-    def profile(self, encoder, sample_instances, sample_labels, prediction_model
+    def build_rule(self, encoder, sample_instances, sample_labels, prediction_model
                         , stopping_param = 1
                         , precis_threshold = 1.0
                         , fixed_length = None
@@ -1073,7 +1088,7 @@ class rule_accumulator(rule_evaluator):
         self.model_entropy = entropy(self.model_post)
 
         # model predicted class
-        self.major_class = np.argmax(self.model_votes['p_counts'])
+        self.major_class = np.argmax(self.model_post)
         if self.get_label is None:
             self.major_class_label = self.major_class
         else:
@@ -1124,10 +1139,10 @@ class rule_accumulator(rule_evaluator):
 
         # accumulate rule terms
         cum_points = 0
-        self.profile_iter = 0
+        self.build_rule_iter = 0
 
         while current_precision != 1.0 and current_precision != 0.0 and current_precision < precis_threshold and self.accumulated_points <= self.total_points * self.stopping_param and (fixed_length is None or len(self.cum_info_gain) < max(1, fixed_length) + 1):
-            self.profile_iter += 1
+            self.build_rule_iter += 1
             self.add_rule(p_total = self.stopping_param)
             # you could add a round of bootstrapping here, but what does that do to performance
             eval_rule = self.evaluate_rule(instances=encoder.transform(pred_instances),
