@@ -35,6 +35,7 @@ class data_container:
     , class_col
     , var_names = None
     , var_types = None
+    , project_dir = None
     , pickle_dir = ''
     , random_state = None
     , spiel = ''):
@@ -48,6 +49,11 @@ class data_container:
         self.data_pre = DataFrame.copy(self.data)
         self.class_col = class_col
         self.pickle_dir = pickle_dir
+
+        if project_dir is None:
+            self.project_dir = cfg.project_dir
+        else:
+            self.project_dir = project_dir
 
         if var_names is None:
             self.var_names = list(self.data.columns)
@@ -120,8 +126,8 @@ class data_container:
 
     # helper function for pickling files
     def pickle_path(self, filename = ''):
-        if len(cfg.project_dir) > 0:
-            return(cfg.project_dir + cfg.path_sep + self.pickle_dir + cfg.path_sep + filename)
+        if len(self.project_dir) > 0:
+            return(self.project_dir + cfg.path_sep + self.pickle_dir + cfg.path_sep + filename)
         else:
             return(self.pickle_dir + cfg.path_sep + filename)
 

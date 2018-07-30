@@ -6,12 +6,13 @@ from forest_surveyor import config as cfg
 from forest_surveyor.structures import data_container
 
 # accident
-def accident_data(random_state=123):
+def accident_data(random_state=123, project_dir=None):
 
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'accident.csv.gz',
                         compression='gzip'),
     class_col = 'Accident_Severity',
+    project_dir = project_dir,
     pickle_dir = 'accident_pickles',
     random_state=random_state,
     spiel = '''
@@ -33,12 +34,13 @@ def accident_data(random_state=123):
     return(data_cont)
 
 # accident sample: 0.1
-def accident_samp_data(random_state=123):
+def accident_samp_data(random_state=123, project_dir=None):
 
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'accident_samp.csv.gz',
                         compression='gzip'),
     class_col = 'Accident_Severity',
+    project_dir = project_dir,
     pickle_dir = 'accident_samp_pickles',
     random_state=random_state,
     spiel = '''
@@ -60,12 +62,13 @@ def accident_samp_data(random_state=123):
     return(data_cont)
 
 # accident small sample: 0.01
-def accident_small_samp_data(random_state=123):
+def accident_small_samp_data(random_state=123, project_dir=None):
 
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'accident_small_samp.csv.gz',
                         compression='gzip'),
     class_col = 'Accident_Severity',
+    project_dir = project_dir,
     pickle_dir = 'accident_small_samp_pickles',
     random_state=random_state,
     spiel = '''
@@ -87,11 +90,12 @@ def accident_small_samp_data(random_state=123):
     return(data_cont)
 
 # adult
-def adult_data(random_state=123):
+def adult_data(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'adult.csv.gz',
                         compression='gzip'),
     class_col = 'income',
+    project_dir = project_dir,
     pickle_dir = 'adult_pickles',
     random_state=random_state,
     spiel = '''
@@ -116,11 +120,12 @@ def adult_data(random_state=123):
     return(data_cont)
 
 # adult sample: 0.25
-def adult_samp_data(random_state=123):
+def adult_samp_data(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'adult_samp.csv.gz',
                         compression='gzip'),
     class_col = 'income',
+    project_dir = project_dir,
     pickle_dir = 'adult_samp_pickles',
     random_state=random_state,
     spiel = '''
@@ -145,11 +150,12 @@ def adult_samp_data(random_state=123):
     return(data_cont)
 
 # adult sample: 0.025
-def adult_small_samp_data(random_state=123):
+def adult_small_samp_data(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'adult_small_samp.csv.gz',
                         compression='gzip'),
     class_col = 'income',
+    project_dir = project_dir,
     pickle_dir = 'adult_small_samp_pickles',
     random_state=random_state,
     spiel = '''
@@ -174,7 +180,7 @@ def adult_small_samp_data(random_state=123):
     return(data_cont)
 
 # bank marketing
-def bankmark_data(random_state=123):
+def bankmark_data(random_state=123, project_dir=None):
 
     vtypes = {'age': np.int16,
      'campaign': np.int16,
@@ -203,6 +209,7 @@ def bankmark_data(random_state=123):
                         compression='gzip',
                         dtype=vtypes),
     class_col = 'y',
+    project_dir = project_dir,
     pickle_dir = 'bankmark_pickles',
     random_state=random_state,
     spiel = '''
@@ -253,7 +260,7 @@ def bankmark_data(random_state=123):
     return(data_cont)
 
 # bank marketing sample: 0.05
-def bankmark_samp_data(random_state=123):
+def bankmark_samp_data(random_state=123, project_dir=None):
 
     vtypes = {'age': np.int16,
      'campaign': np.int16,
@@ -282,6 +289,7 @@ def bankmark_samp_data(random_state=123):
                         compression='gzip',
                         dtype=vtypes),
     class_col = 'y',
+    project_dir = project_dir,
     pickle_dir = 'bankmark_samp_pickles',
     random_state=random_state,
     spiel = '''
@@ -332,7 +340,7 @@ def bankmark_samp_data(random_state=123):
     return(data_cont)
 
 # car
-def car_data(random_state=123):
+def car_data(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'car.csv.gz',
                         compression='gzip'),
@@ -344,6 +352,7 @@ def car_data(random_state=123):
                 , 'lug_boot'
                 , 'safety'
                 , 'acceptability'],
+    project_dir = project_dir,
     pickle_dir = 'car_pickles',
     random_state=random_state,
     spiel = '''
@@ -362,11 +371,12 @@ def car_data(random_state=123):
     return(data_cont)
 
 # cardiotography
-def cardiotography_data(random_state=123):
+def cardiotography_data(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'cardiotography.csv.gz',
                         compression='gzip'),
     class_col = 'NSP',
+    project_dir = project_dir,
     pickle_dir = 'cardiotography_pickles',
     random_state=random_state,
     spiel = '''
@@ -402,11 +412,12 @@ def cardiotography_data(random_state=123):
     return(data_cont)
 
 # credit
-def credit_data(random_state=123):
+def credit_data(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'credit.csv.gz',
                     compression='gzip'),
     class_col = 'A16',
+    project_dir = project_dir,
     pickle_dir = 'credit_pickles',
     random_state=random_state,
     spiel = '''
@@ -439,12 +450,13 @@ def credit_data(random_state=123):
     return(data_cont)
 
 # german
-def german_data(random_state=123):
+def german_data(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'german.csv.gz',
                     compression='gzip'),
     class_col = 'rating',
     pickle_dir = 'german_pickles',
+    project_dir = project_dir,
     random_state=random_state,
     spiel = '''
     Source:
@@ -474,11 +486,12 @@ def german_data(random_state=123):
     return(data_cont)
 
 # lending
-def lending_data(random_state=123):
+def lending_data(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'lending.csv.gz',
                     compression='gzip'),
     class_col = 'loan_status',
+    project_dir = project_dir,
     pickle_dir = 'lending_pickles',
     random_state=random_state,
     spiel = '''
@@ -494,11 +507,12 @@ def lending_data(random_state=123):
     return(data_cont)
 
 # lending sample: 0.1
-def lending_samp_data(random_state=123):
+def lending_samp_data(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'lending_samp.csv.gz',
                     compression='gzip'),
     class_col = 'loan_status',
+    project_dir = project_dir,
     pickle_dir = 'lending_samp_pickles',
     random_state=random_state,
     spiel = '''
@@ -514,11 +528,12 @@ def lending_samp_data(random_state=123):
     return(data_cont)
 
 # lending small sample: 0.01
-def lending_small_samp_data(random_state=123):
+def lending_small_samp_data(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'lending_small_samp.csv.gz',
                     compression='gzip'),
     class_col = 'loan_status',
+    project_dir = project_dir,
     pickle_dir = 'lending_small_samp_pickles',
     random_state=random_state,
     spiel = '''
@@ -534,11 +549,12 @@ def lending_small_samp_data(random_state=123):
     return(data_cont)
 
 # lending tiny sample: 0.0025
-def lending_tiny_samp_data(random_state=123):
+def lending_tiny_samp_data(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'lending_tiny_samp.csv.gz',
                     compression='gzip'),
     class_col = 'loan_status',
+    project_dir = project_dir,
     pickle_dir = 'lending_tiny_samp_pickles',
     random_state=random_state,
     spiel = '''
@@ -554,11 +570,12 @@ def lending_tiny_samp_data(random_state=123):
     return(data_cont)
 
 # nursery
-def nursery_data(random_state=123):
+def nursery_data(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'nursery.csv.gz',
                     compression='gzip'),
     class_col = 'decision',
+    project_dir = project_dir,
     pickle_dir = 'nursery_pickles',
     random_state=random_state,
     spiel = '''
@@ -579,11 +596,12 @@ def nursery_data(random_state=123):
     return(data_cont)
 
 # nursery sample: 0.2
-def nursery_samp_data(random_state=123):
+def nursery_samp_data(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'nursery_samp.csv.gz',
                     compression='gzip'),
     class_col = 'decision',
+    project_dir = project_dir,
     pickle_dir = 'nursery_samp_pickles',
     random_state=random_state,
     spiel = '''
@@ -604,11 +622,12 @@ def nursery_samp_data(random_state=123):
     return(data_cont)
 
 # rcdv
-def rcdv_data(random_state=123):
+def rcdv_data(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'rcdv.csv.gz',
                     compression='gzip'),
     class_col = 'recid',
+    project_dir = project_dir,
     pickle_dir = 'rcdv_pickles',
     random_state=random_state,
     spiel = '''
@@ -657,11 +676,12 @@ def rcdv_data(random_state=123):
     return(data_cont)
 
 # rcdv sample: 0.1
-def rcdv_samp_data(random_state=123):
+def rcdv_samp_data(random_state=123, project_dir=None):
     data_cont = data_container(
     data = pd.read_csv('forest_surveyor' + cfg.path_sep + 'datafiles' + cfg.path_sep + 'rcdv_samp.csv.gz',
                     compression='gzip'),
     class_col = 'recid',
+    project_dir = project_dir,
     pickle_dir = 'rcdv_samp_pickles',
     random_state=random_state,
     spiel = '''

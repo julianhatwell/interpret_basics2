@@ -24,11 +24,13 @@ def experiment(grid_idx, dataset, random_state, add_trees,
                     which_trees, disc_path_bins, disc_path_eqcounts,
                     iv_low, iv_high,
                     weighting, greedy,
-                    forest_walk_async, chirps_explanation_async):
+                    forest_walk_async, chirps_explanation_async,
+                    project_dir):
 
-    print('starting new run for random_state ' + str(random_state) + ' and ' + str(add_trees) + ' additional trees')
+    print('Starting new run for ' + str(dataset) + ':')
+    print('random_state ' + str(random_state) + ' and ' + str(add_trees) + ' additional trees')
     # load data set
-    mydata = dataset(random_state=random_state)
+    mydata = dataset(random_state=random_state, project_dir=project_dir)
 
     # train test split - one off hard-coded
     # the random_state is not used here. Just use to develop the forests
@@ -360,7 +362,10 @@ def experiment(grid_idx, dataset, random_state, add_trees,
     pickle.dump(completed_rule_accs, completed_rule_accs_store)
     completed_rule_accs_store.close()
 
-    print('completed experiment for random_state ' + str(mydata.random_state) + ' and ' +str(add_trees) + ' additional trees')
+    print('Completed experiment for ' + str(dataset) + ':')
+    print('random_state ' + str(mydata.random_state) + ' and ' +str(add_trees) + ' additional trees')
+    print()
+    print()
     # pass the elapsed times up to the caller
     return(wb_elapsed_time + wbres_elapsed_time, anch_elapsed_time, grid_idx)
 
@@ -369,15 +374,9 @@ def grid_experiment_mp(grid):
     start_time = timeit.default_timer()
 
     print(str(len(grid.index)) + ' runs to do')
-
-    # n_cores = mp.cpu_count()-1
-    # print('Going parallel over ' + str(n_cores) + ' cores ... (please wait)')
-    # pool = mp.Pool(processes=n_cores)
-    results = []
-
     # iterate over the paramaters for each run
     for g in range(len(grid.index)):
-        results.append(experiment(grid_idx = grid.loc[g].grid_idx,
+        experiment(grid_idx = grid.loc[g].grid_idx,
                 dataset = grid.loc[g].dataset,
                 random_state = grid.loc[g].random_state,
                 add_trees = grid.loc[g].add_trees,
@@ -398,7 +397,8 @@ def grid_experiment_mp(grid):
                 weighting = grid.loc[g].weighting,
                 greedy = grid.loc[g].greedy,
                 forest_walk_async = grid.loc[g].forest_walk_async,
-                chirps_explanation_async = grid.loc[g].chirps_explanation_async))
+                chirps_explanation_async = grid.loc[g].chirps_explanation_async,
+                project_dir = grid.loc[g].project_dir)
 
     print('Completed ' + str(len(grid)) + ' run(s)')
     print()
