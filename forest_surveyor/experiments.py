@@ -25,7 +25,7 @@ def experiment(grid_idx, dataset, random_state, add_trees,
                     iv_low, iv_high,
                     weighting, greedy,
                     forest_walk_async, chirps_explanation_async,
-                    project_dir):
+                    project_dir, save_rule_accs):
 
     print('Starting new run for ' + str(dataset) + ':')
     print('random_state ' + str(random_state) + ' and ' + str(add_trees) + ' additional trees')
@@ -101,7 +101,8 @@ def experiment(grid_idx, dataset, random_state, add_trees,
      weighting=weighting,
      greedy=greedy,
      forest_walk_async=forest_walk_async,
-     chirps_explanation_async=chirps_explanation_async)
+     chirps_explanation_async=chirps_explanation_async,
+     save_rule_accs=save_rule_accs)
 
     wb_end_time = timeit.default_timer()
     wb_elapsed_time = wb_end_time - wb_start_time
@@ -358,9 +359,10 @@ def experiment(grid_idx, dataset, random_state, add_trees,
     output_df = DataFrame(output, columns=headers)
     output_df.to_csv(mydata.pickle_path(mydata.pickle_dir.replace('pickles', 'results') + '_rnst_' + str(mydata.random_state) + "_addt_" + str(add_trees) + '_timetest.csv'))
     # save the full rule_acc_lite objects
-    completed_rule_accs_store = open(mydata.pickle_path('completed_rule_accs' + '_rnst_' + str(mydata.random_state) + "_addt_" + str(add_trees) + '.pickle'), "wb")
-    pickle.dump(completed_rule_accs, completed_rule_accs_store)
-    completed_rule_accs_store.close()
+    if save_rule_accs:
+        completed_rule_accs_store = open(mydata.pickle_path('completed_rule_accs' + '_rnst_' + str(mydata.random_state) + "_addt_" + str(add_trees) + '.pickle'), "wb")
+        pickle.dump(completed_rule_accs, completed_rule_accs_store)
+        completed_rule_accs_store.close()
 
     print('Completed experiment for ' + str(dataset) + ':')
     print('random_state ' + str(mydata.random_state) + ' and ' +str(add_trees) + ' additional trees')
@@ -376,6 +378,7 @@ def grid_experiment_mp(grid):
     print(str(len(grid.index)) + ' runs to do')
     # iterate over the paramaters for each run
     for g in range(len(grid.index)):
+        run_start_time = timeit.default_timer()
         experiment(grid_idx = grid.loc[g].grid_idx,
                 dataset = grid.loc[g].dataset,
                 random_state = grid.loc[g].random_state,
@@ -398,8 +401,13 @@ def grid_experiment_mp(grid):
                 greedy = grid.loc[g].greedy,
                 forest_walk_async = grid.loc[g].forest_walk_async,
                 chirps_explanation_async = grid.loc[g].chirps_explanation_async,
-                project_dir = grid.loc[g].project_dir)
-
+                project_dir = grid.loc[g].project_dir,
+                save_rule_accs = grid.loc[g].save_rule_accs)
+        print('Run Completed')
+        run_elapsed_time = timeit.default_timer() - run_start_time
+        cum_elapsed_time = timeit.default_timer() - start_time
+        print('Run time elapsed:', "{:0.4f}".format(run_elapsed_time), 'seconds')
+        print('Cumulative time elapsed:', "{:0.4f}".format(cum_elapsed_time), 'seconds')
     print('Completed ' + str(len(grid)) + ' run(s)')
     print()
     # capture timing results
